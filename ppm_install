@@ -42,6 +42,8 @@ Options:
  [-i | --ignore]      : ignore any failing test results
  [-f | --force]       : force remaking a distribution
  [--no_case]          : for module searches, ignore case
+ [--upgrade]          : upgrade via ppm
+ [--program]  b=a     : specify "a" to be used for the "b" program
 
 Additional Arguments:
 
@@ -53,7 +55,7 @@ inside the current directory.
 
 =head1 DESCRIPTION
 
-C<ppm_install> is an interface to the C<PPM::Make> module,
+C<ppm_install> is an interface to the C<PPM::Make::Install> module,
 and is used to build a PPM (Perl Package Manager) distribution
 from a CPAN source distribution and then install it with 
 the C<ppm> utility. See L<PPM::Make> for a discussion.

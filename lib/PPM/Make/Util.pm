@@ -10,6 +10,8 @@ require File::Spec;
 use File::Path;
 use Config;
 use LWP::Simple qw(getstore is_success);
+our ($VERSION);
+$VERSION = 0.66;
 
 use constant WIN32 => $^O eq 'MSWin32';
 

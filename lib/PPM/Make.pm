@@ -17,8 +17,9 @@ require File::Spec;
 use Pod::Html;
 use Safe;
 use YAML qw(LoadFile);
+
 our ($VERSION);
-$VERSION = '0.65';
+$VERSION = '0.66';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -1436,7 +1437,7 @@ made in the module.
 
 =head1 COPYRIGHT
 
-This program is copyright, 2002, by Randy Kobes <randy@theoryx5.uwinnipeg.ca>.
+This program is copyright, 2003, by Randy Kobes <randy@theoryx5.uwinnipeg.ca>.
 It is distributed under the same terms as Perl itself.
 
 =head1 SEE ALSO
@@ -1445,7 +1446,7 @@ L<make_ppm> for a command-line interface for making
 ppm packages, L<ppm_install> for a command line interface
 for installing CPAN packages via C<ppm>, L<tk-ppm> for
 a Tk graphical interface to C<ppm> and the install utility
-of PPM::Make, and L<PPM>.
+of PPM::Make, L<PPM::Make::Install>, and L<PPM>.
 
 =cut
 

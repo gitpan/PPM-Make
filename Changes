@@ -1,5 +1,9 @@
 Revision history for Perl extension PPM::Make.
 
+0.66 Wed Sep 10 10:08:00 2003
+  - add documentation for PPM::Make::Install
+  - add version for PPM::Make::Install and PPM::Make::Util
+
 0.65 Mon Jun 23 14:08:00 2003
   - move the install option of PPM::Make to PPM::Make::Install
   - add the tk-ppm script

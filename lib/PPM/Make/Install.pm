@@ -5,6 +5,8 @@ use base qw(PPM::Make);
 use PPM::Make::Util qw(:all);
 use Config;
 use Cwd;
+our ($VERSION);
+$VERSION = '0.66';
 
 sub new {
   my ($class, %opts) = @_;
@@ -37,7 +39,7 @@ sub new {
 sub check_opts {
   my %opts = @_;
   my %legal = 
-    map {$_ => 1} qw(force ignore dist program upgrade remove);
+    map {$_ => 1} qw(force ignore dist program upgrade remove no_case);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_'\n";
@@ -150,3 +152,77 @@ sub ppm_install {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+PPM::Make::Install - build and install a distribution via ppm
+
+=head1 SYNOPSIS
+
+  my $ppm = PPM::Make::Install->new(%opts);
+  $ppm->make_ppm();
+  $ppm->ppm_install();
+
+=head1 DESCRIPTION
+
+C<PPM::Make::Install> is used to build a PPM (Perl Package Manager) 
+distribution from a CPAN source distribution and then install it with 
+the C<ppm> utility. See L<PPM::Make> for a discussion of details on
+how the ppm package is built. Available options are
+
+=over
+
+=item ignore => 1
+
+By default, C<PPM::Make::Install>, when building the distribution,
+will die if all tests do not pass. Turning on this option
+instructs the module to ignore any test failures.
+
+=item remove => 1
+
+If specified, the directory used to build the ppm distribution
+will be removed after a successful install.
+
+=item force => 1
+
+By default, if C<PPM::Make::Install> detects a F<blib/> directory,
+it will assume the distribution has already been made, and
+will not remake it. This option forces remaking the distribution.
+
+=item no_case => 1
+
+If specified, module searches will be performed in a case-insensitive
+manner.
+
+=item upgrade => 1
+
+Will do an upgrade of the specified package, if applicable.
+
+=item dist => value
+
+A value for I<dist> will be interpreted either as a CPAN-like source
+distribution to fetch and build, or as a module name,
+in which case I<CPAN.pm> will be used to infer the
+corresponding distribution to grab.
+
+=item program => { p1 => '/path/to/q1', p2 => '/path/to/q2', ...}
+
+This option specifies that C</path/to/q1> should be used
+for program C<p1>, etc., rather than the ones PPM::Make finds. The
+programs specified can be one of C<tar>, C<gzip>, C<zip>, C<unzip>,
+or C<make>.
+
+=back
+
+=head1 COPYRIGHT
+
+This program is copyright, 2003, by Randy Kobes <randy@theoryx5.uwinnipeg.ca>.
+It is distributed under the same terms as Perl itself.
+
+=head1 SEE ALSO
+
+L<PPM::Make>, and L<PPM>.
+
+=cut
