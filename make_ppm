@@ -25,6 +25,8 @@ GetOptions(\%opts,
            'remove|r',
            'as|A!',
            'vs|V',
+           'vsr',
+           'vsp',
            'add|x:s' => \@files,
            'program|p:s' => \%progs,
            'ppd:s',
@@ -88,6 +90,8 @@ Options:
  [ --cpan ]                : make a CPAN distribution
  [ --no_case ]             : for module searches, ignore case
  [ --no_cfg ]              : do not read a .ppmcfg configuration file
+ [ --vsr]                  : add version string to the archive filename
+ [ --vsp]                  : add version string to the ppd filename
 
 Additional Arguments:
 
@@ -240,6 +244,18 @@ practice. Specify C<--noas> to disable this option.
 
 This option will add a version string (based on the VERSION reported
 in the ppd file) to the ppd and archive filenames.
+
+=item [--vsr]
+
+This option, if enabled, will add a version string 
+(based on the VERSION reported in the ppd file) to the 
+archive filename.
+
+=item [--vsp]
+
+This option, if enabled, will add a version string 
+(based on the VERSION reported in the ppd file) to the 
+ppd filename.
 
 =item [--cpan]
 

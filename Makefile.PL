@@ -74,7 +74,7 @@ of prerequisites to install, if you like.
 WARN
     my $ans = prompt('Add Compress::Zlib and Archive::Tar?', 'yes');
     if ($ans =~ /^y/i) {
-      $prereqs{'Archive::Tar'} = 0.08;
+      $prereqs{'Archive::Tar'} = 1.08;
       $prereqs{'Compress::Zlib'} = 1.0;
     }
     else {
@@ -89,9 +89,21 @@ DEATH
   }
 }
 else {
-  print "Will use Compress::Zlib and Archive::Tar for .tar.gz archives\n";
-}
+  my $atv = $Archive::Tar::VERSION + 0;
+  if ($atv < 1.08 and WIN32) {
+    print <<'AT';
 
+Archive::Tar version 1.08 or greater is needed.
+I can add this to the list of prerequisites, if you like.
+
+AT
+    my $ans = prompt('Add Archive::Tar?', 'yes');
+    if ($ans =~ /^y/i) {
+      $prereqs{'Archive::Tar'} = 1.08;
+    }
+  }
+  print "Will use Archive::Tar and Compress::Zlib for .tar.gz archives\n";
+}
 
 eval {require Archive::Zip;};
 if ($@) {

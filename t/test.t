@@ -56,14 +56,13 @@ my $is_Win32 = ($d->{OS}->{NAME} =~ /Win32/i);
 
 my @f;
 if ($is_Win32) {
-  finddepth(sub {return unless -f $_; 
-                 push @f, $File::Find::name unless
-                     $File::Find::name =~ m!blib/man\d!;
-		 print $File::Find::name,"\n"}, 'blib');
+    finddepth(sub { push @f, $File::Find::name
+                        unless $File::Find::name =~ m!blib/man\d!;
+                    print $File::Find::name,"\n"}, 'blib');
 }
 else {
-  finddepth(sub {push @f, $File::Find::name; 
-		print $File::Find::name,"\n"}, 'blib');
+    finddepth(sub {push @f, $File::Find::name; 
+                   print $File::Find::name,"\n"}, 'blib');
 }
 
 my $tar = $ppm->{has}->{tar};
@@ -121,17 +120,14 @@ ok($d->{INSTALL}->{EXEC}, $exec);
 @f = ();
 @files = ();
 if ($is_Win32) {
-  finddepth(sub {return unless -f $_; 
-                 push @f, $File::Find::name unless
-                     $File::Find::name =~ m!blib/man\d!;
-		 print $File::Find::name,"\n"}, 'blib');
+    finddepth(sub { push @f, $File::Find::name
+                        unless $File::Find::name =~ m!blib/man\d!;
+                    print $File::Find::name,"\n"}, 'blib');
 }
 else {
-  finddepth(sub {push @f, $File::Find::name; 
-		print $File::Find::name,"\n"}, 'blib');
+    finddepth(sub {push @f, $File::Find::name; 
+                   print $File::Find::name,"\n"}, 'blib');
 }
-#finddepth(sub {push @f, $File::Find::name; 
-#               print $File::Find::name,"\n"}, 'blib');
 
 if ($tar eq 'Archive::Tar' and $gzip eq 'Compress::Zlib') {
    require Archive::Tar;

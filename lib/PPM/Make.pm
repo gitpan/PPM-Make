@@ -19,7 +19,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.67';
+$VERSION = '0.68';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -68,7 +68,7 @@ sub check_opts {
   my %legal = 
     map {$_ => 1} qw(force ignore binary zip remove program cpan
                      dist script exec os arch arch_sub add no_as vs upload
-                     no_case no_cfg);
+                     no_case no_cfg vsr vsp);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_'\n";
@@ -798,7 +798,8 @@ sub make_dist {
     $name  =~ s!::!-!g;
   }
 
-  $name .= "-$self->{version}" if ($self->{opts}->{vs} and $self->{version});
+  $name .= "-$self->{version}" 
+      if ( ($self->{opts}->{vs} or $self->{opts}->{vsr}) and $self->{version});
 
   my $is_Win32 = (not $self->{OS} or $self->{OS} =~ /Win32/i 
 		  or not $self->{ARCHITECTURE} or
@@ -823,10 +824,9 @@ sub make_dist {
       my @f;
       my $arc = Archive::Tar->new();
       if ($is_Win32) {
-        finddepth(sub { return unless -f $_;
-                       push @f, $File::Find::name
-                          unless $File::Find::name =~ m!blib/man\d!;
-		       print $File::Find::name,"\n"}, 'blib');
+          finddepth(sub { push @f, $File::Find::name
+                              unless $File::Find::name =~ m!blib/man\d!;
+                          print $File::Find::name,"\n"}, 'blib');
       }
       else {
 	finddepth(sub {push @f, $File::Find::name; 
@@ -852,7 +852,7 @@ sub make_dist {
 	my @f;
         finddepth(sub { 
                        push @f, $File::Find::name
-                          unless $File::Find::name =~ m!blib/man\d!;},
+                          if $File::Find::name =~ m!blib/man\d!;},
                              'blib');
 	for (@f) {
 	  push @args, "--exclude", $_;
@@ -945,6 +945,12 @@ sub make_ppd {
   }
 
   (my $name = $dist) =~ s!$ext!!;
+  if ($self->{opts}->{vsr} and not $self->{opts}->{vsp}) {
+     $name =~ s/-$self->{version}//;
+  }
+  if ($self->{opts}->{vsp} and $name !~ m/-$self->{version}/) {
+     $name .= "-$self->{version}";
+  }
   my $ppd = $name . '.ppd';
   my $args = $self->{args};
   my $os = $self->{OS};
@@ -1288,6 +1294,18 @@ will make a ppd file I<without> this practice.
 This option, if enabled, will add a version string 
 (based on the VERSION reported in the ppd file) to the 
 ppd and archive filenames.
+
+=item vsr => boolean
+
+This option, if enabled, will add a version string 
+(based on the VERSION reported in the ppd file) to the 
+archive filename.
+
+=item vsp => boolean
+
+This option, if enabled, will add a version string 
+(based on the VERSION reported in the ppd file) to the 
+ppd filename.
 
 =item upload => {key1 => val1, key2 => val2, ...}
 

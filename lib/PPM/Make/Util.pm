@@ -11,7 +11,7 @@ use File::Path;
 use Config;
 use LWP::Simple qw(getstore is_success);
 our ($VERSION);
-$VERSION = 0.67;
+$VERSION = '0.68';
 
 use constant WIN32 => $^O eq 'MSWin32';
 
@@ -1382,8 +1382,17 @@ sub what_have_you {
 	$Config{gzip} || which('gzip') || $CPAN::Config->{gzip};
     }
     else {
-      $has{tar} = 'Archive::Tar';
-      $has{gzip} = 'Compress::Zlib';
+      my $atv = $Archive::Tar::VERSION + 0;
+      if (not WIN32 or (WIN32 and $atv >= 1.08)) {
+        $has{tar} = 'Archive::Tar';
+        $has{gzip} = 'Compress::Zlib';
+      }
+      else {
+         $has{tar} = 
+	    $Config{tar} || which('tar') || $CPAN::Config->{tar};
+          $has{gzip} =
+	    $Config{gzip} || which('gzip') || $CPAN::Config->{gzip};
+      }
     }
   }
 

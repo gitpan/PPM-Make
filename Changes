@@ -1,5 +1,13 @@
 Revision history for Perl extension PPM::Make.
 
+0.68 Sun Jan 11 23:00:00 2003
+  - require Archive::Tar >= 1.08 for Win32 to fix A::T bug
+  - add --vsp and --vsr flags to add version string to
+    ppd and archive files
+  - fix bug on non-Win32 when generating ppm packages for
+    use on Win32 regarding which files to include in the
+    archive [thanks to Mike Schilli]
+
 0.67 Thu Nov 20 20:08:00 2003
   - fix bug in tk-ppm regarding dialogue_yes_no
   - on Win32, only list files in making archive (not directories),
