@@ -15,6 +15,8 @@ my %prereqs = ('Pod::Find' => 0.23,
                'Getopt::Long' => 2.33,
 	       'Config::IniFiles' => 0,
                'Pod::Usage' => 1,
+               'CPAN::DistnameInfo' => 0,
+               'SOAP::Lite' => 0,
 	       );
 
 my $home = $ENV{HOME};
@@ -30,10 +32,11 @@ unless ($has_myconfig) {
 }
 
 if ($@) {
-  die <<'WARN';
+  warn <<'WARN';
     
 It appears you have yet to configure the CPAN.pm module.
-PPM::Make would use this to map module to distribution names. 
+PPM::Make would use this to map module to distribution names
+in the event that a call to a remote soap server fails.
 You can configure CPAN.pm by typing
 
     C:\> perl -MCPAN -e shell
@@ -263,7 +266,7 @@ WARN
 }
 
 my @exe_files = qw(make_ppm ppm_install);
-push @exe_files, 'tk-ppm' if WIN32;
+#push @exe_files, 'tk-ppm' if WIN32;
 WriteMakefile(
               NAME         => 'PPM::Make',
               VERSION_FROM => 'lib/PPM/Make.pm',

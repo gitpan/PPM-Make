@@ -13,7 +13,6 @@ GetOptions(\%opts,
            'ignore|i',
            'remove|r',
            'force|f',
-           'no_case',
            'upgrade',
           ) or pod2usage(2);
 
@@ -41,7 +40,6 @@ Options:
  [-r | --remove]      : remove the build directory after installation
  [-i | --ignore]      : ignore any failing test results
  [-f | --force]       : force remaking a distribution
- [--no_case]          : for module searches, ignore case
  [--upgrade]          : upgrade via ppm
  [--program]  b=a     : specify "a" to be used for the "b" program
 
@@ -65,7 +63,8 @@ C<ppm_install> will assume it is inside an unpacked source
 distribution and make the corresponding PPM distribution.
 If it is given an argument of what looks like a module
 name (eg, I<Net::FTP>), it will use C<CPAN.pm> to look up the 
-corresponding distribution and fetch and build it. Otherwise, 
+corresponding distribution and fetch and build it (module
+names are case sensistive). Otherwise, 
 additional arguments (eg, F<package.tar.gz>, or
 I<http://someplace.org/package.tar.gz>) will be interpreted
 as distributions to fetch and build.
@@ -88,11 +87,6 @@ given on the command line will be removed after a successful install.
 By default, if C<ppm_install> detects a F<blib/> directory,
 it will assume the distribution has already been made, and
 will not remake it. This option forces remaking the distribution.
-
-=item [--no_case]
-
-If specified, module searches will be performed in a case-insensitive
-manner.
 
 =item [--upgrade]
 

@@ -10,7 +10,6 @@ use File::Path;
 use File::Find;
 use File::Copy;
 use Config;
-use CPAN;
 use Net::FTP;
 use LWP::Simple qw(getstore is_success);
 require File::Spec;
@@ -19,7 +18,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.71';
+$VERSION = '0.74';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -135,20 +134,24 @@ sub arch_and_os {
 }
 
 sub get_cfg_file {
-  my $file;
   if (defined $ENV{PPM_CFG} and my $env = $ENV{PPM_CFG}) {
     if (-e $env) {
-      $file = $env;
+      return $env;
     }
     else {
       warn qq{Cannot find '$env' from \$ENV{PPM_CFG}};
+      return;
     }
   }
-  else {
-    my $home = (WIN32 ? '/.ppmcfg' : "$ENV{HOME}/.ppmcfg");
-    $file = $home if (-e $home);
+  if (defined $ENV{HOME} and my $home = $ENV{HOME}) {
+    my $candidate = File::Spec->catfile($home, '.ppmcfg');
+    return $candidate if (-e $candidate);
   }
-  return $file;
+  if (WIN32) {
+    my $candidate = '/.ppmcfg';
+    return $candidate if (-e $candidate);
+  }
+  return;
 }
 
 sub read_cfg {
@@ -256,10 +259,10 @@ sub make_ppm {
   $self->check_files() if $self->{opts}->{add};
   $self->adjust_binary() if $self->{opts}->{arch_sub};
   $self->build_dist() 
-    unless (-d 'blib' and (-f 'Makefile' or ($mb and -f 'Build')) 
+    unless (-d 'blib' and (-f 'Makefile' or ($mb and -f 'Build' and -d '_build')) 
             and not $force);
   $self->parse_yaml if (-e 'META.yml');
-  if ($mb) {
+  if ($mb and -d '_build') {
     $self->parse_build();
   }
   else {
@@ -327,7 +330,8 @@ sub extract_dist {
     if ($suffix eq '.zip') {
       ($unzip eq 'Archive::Zip') && do {
 	my $arc = Archive::Zip->new();
-        die "Read of $file failed" unless $arc->read($file) == Archive::Zip::AZ_OK();
+        die "Read of $file failed" 
+          unless $arc->read($file) == Archive::Zip::AZ_OK();
 	$arc->extractTree();
 	last EXTRACT;
       };
@@ -469,12 +473,14 @@ sub parse_build {
 sub parse_yaml {
   my $self = shift;
   my $props = LoadFile('META.yml');
+  my $author = ($props->{AUTHOR} and ref($props->{AUTHOR} eq 'ARRAY')) ?
+    $props->{AUTHOR}->[0] : $props->{AUTHPR};
   my %r = ( NAME => $props->{name},
             DISTNAME => $props->{distname},
             VERSION => $props->{version},
             VERSION_FROM => $props->{version_from},
             PREREQ_PM => $props->{requires},
-            AUTHOR => $props->{author},
+            AUTHOR => $author,
             ABSTRACT => $props->{abstract},
           );
   foreach (keys %r) {
@@ -647,6 +653,7 @@ sub author {
   unless ($args->{AUTHOR}) {
     if (my $author = $self->guess_author()) {
       $self->{args}->{AUTHOR} = $author;
+      warn qq{Setting author to "$author" ...\n};
     }
     else {
       warn "Please check AUTHOR in the ppd file\n";
@@ -657,75 +664,13 @@ sub author {
 sub guess_author {
   my $self = shift;
   my $args = $self->{args};
-  if (HAS_CPAN) {
-    (my $mod = $args->{NAME}) =~ s!-!::!g;
-    print "Trying to get AUTHOR from CPAN.pm ...\n";
-    my $module = CPAN::Shell->expand('Module', $mod);
-    unless ($module) {
-      for (qw(VERSION_FROM ABSTRACT_FROM)) {
-        if (my $from = $args->{$_}) {
-          $from =~ s!^lib/!!;
-          $from =~ s!\.pm$!!;
-          $from =~ s!/!::!g;
-          last if $module = CPAN::Shell->expand('Module', $from);
-        }
-      }
-    }
-    return unless $module;
-    return unless (my $userid = $module->cpan_userid);
-    return unless (my $author = CPAN::Shell->expand('Author', $userid));
-    my $auth_string = $author->fullname;
-    my $email = $author->email;
-    $auth_string .= ' &lt;' . $email . '&gt;' if $email;
-    if ($auth_string) {
-      warn qq{Setting AUTHOR to "$auth_string"\n};
-      return $auth_string;
-    }
+  my $results;
+  for ($args->{DISTNAME}, $args->{NAME}) {
+    next unless $_;
+    $results = dist_search($_);
+    last if $results;
   }
-  my $cwd = $self->{cwd};
-  my $result;
-  if (my $version_from = $args->{VERSION_FROM}) {
-    print "Trying to get AUTHOR from $version_from ...\n";
-    if ($result = parse_author($version_from)) {
-      warn qq{Setting AUTHOR to "$result" (may require editing)\n};
-      return $result;
-    }
-  }
-  my ($hit, $guess);
-  for my $ext (qw(pm pod)) {
-    if ($args->{NAME} =~ /-|:/) {
-      ($guess = $args->{NAME}) =~ s!.*[-:](.*)!$1.$ext!;
-    }
-    else {
-      $guess = $args->{NAME} . ".$ext";
-    }
-    finddepth(sub{$_ eq $guess && ($hit = $File::Find::name) 
-		    && ($hit !~ m!blib/!)}, $cwd);
-    next unless (-f $hit);
-    print "Trying to get AUTHOR from $hit ...\n";
-    if ($result = parse_author($hit)) {
-      warn qq{Setting AUTHOR to "$result" (may require editing)\n};
-      return $result;
-    }
-  }
-  return;
-}
-
-sub parse_author {
-  my $file = shift;
-  open(my $fh, $file) or die "Couldn't open $file: $!";
-  my @author;
-  local $_;
-  while (<$fh>) {
-    next unless /^=head1\s+AUTHOR/ ... /^=/;
-    next if /^=/;
-    push @author, $_;
-  }
-  close $fh;
-  return unless @author;
-  my $author = join '', @author;
-  $author =~ s/^\s+|\s+$//g;
-  return $author;
+  return $results ? $results->{author} : undef;
 }
 
 sub make_html {
@@ -882,7 +827,8 @@ sub make_dist {
       my $arc = Archive::Zip->new();
       if ($is_Win32) {
         die "zip of blib failed" unless $arc->addTree('blib', 'blib',
-                     sub{$_ !~ m!blib/man\d/! && print "$_\n";}) == Archive::Zip::AZ_OK();
+                     sub{$_ !~ m!blib/man\d/! 
+                           && print "$_\n";}) == Archive::Zip::AZ_OK();
       }
       else {
         die "zip of blib failed" unless $arc->addTree('blib', 'blib', 
@@ -983,10 +929,10 @@ sub make_ppd {
   }
   
   foreach my $dp (keys %{$args->{PREREQ_PM}}) {
-    next if is_core($dp);
-    my $results = mod_search($dp, no_case => 0, partial => 0);
-    next unless (defined $results->{$dp});
-    my $dist = file_to_dist($results->{$dp}->{cpan_file});
+    next if ($dp eq 'perl' or is_core($dp));
+    my $results = mod_search($dp);
+    next unless (defined $results->{mod_name});
+    my $dist = $results->{dist_name};
     next if (not $dist or $dist =~ m!^perl$! or $dist =~ m!^Test!);
     $self->{prereq_pm}->{$dist} = 
       $d->{PREREQ_PM}->{$dist} = cpan2ppd_version($args->{PREREQ_PM}->{$dp});
@@ -1143,14 +1089,20 @@ sub upload_ppm {
     my ($user, $passwd) = ($upload->{user}, $upload->{passwd});
     die "Must specify a username and password to log into $host"
       unless ($user and $passwd);
-    my $ftp = Net::FTP->new($host) or die "Cannot connect to $host";
-    $ftp->login($user, $passwd) or die "Login for user $user failed";
-    $ftp->cwd($ppd_loc) or die "cwd to $ppd_loc failed";
+    my $ftp = Net::FTP->new($host)
+      or die "Cannot connect to $host: $@";
+    $ftp->login($user, $passwd)
+      or die "Login for user $user failed: ", $ftp->message;
+    $ftp->cwd($ppd_loc) or die
+      "cwd to $ppd_loc failed: ", $ftp->message;
     $ftp->ascii;
-    $ftp->put($ppd) or die "Cannot upload $ppd";
-    $ftp->cwd($ar_loc) or die "cwd to $ar_loc failed";
+    $ftp->put($ppd)
+      or die "Cannot upload $ppd: ", $ftp->message;
+    $ftp->cwd($ar_loc)
+      or die "cwd to $ar_loc failed: ", $ftp->message;
     $ftp->binary;
-    $ftp->put($archive) or die "Cannot upload $archive";
+    $ftp->put($archive)
+      or die "Cannot upload $archive: ", $ftp->message;
     $ftp->quit;
   }
   else {
@@ -1532,9 +1484,14 @@ It is distributed under the same terms as Perl itself.
 
 L<make_ppm> for a command-line interface for making
 ppm packages, L<ppm_install> for a command line interface
-for installing CPAN packages via C<ppm>, L<tk-ppm> for
-a Tk graphical interface to C<ppm> and the install utility
-of PPM::Make, L<PPM::Make::Install>, and L<PPM>.
+for installing CPAN packages via C<ppm>,
+L<PPM::Make::Install>, and L<PPM>.
+
+The software needed to run the remote SOAP server used here
+for fetching author, module, and distribution information
+is available in the I<Cpan-Search-Lite> project
+at L<http://sourceforge.net/projects/cpan-search/> as
+F<cgi-bin/ppminfo.cgi> - see also L<CPAN::Search::Lite>.
 
 =cut
 

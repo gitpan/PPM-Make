@@ -10,6 +10,7 @@ require File::Spec;
 use File::Path;
 use Config;
 use LWP::Simple qw(getstore is_success);
+use CPAN::DistnameInfo;
 our ($VERSION);
 $VERSION = '0.71';
 
@@ -63,11 +64,11 @@ $protocol = qr{^(http|ftp)://};
 $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)};
 
 my @exports = qw(load_cs verifyMD5 html_escape parse_version $ERROR
-                 is_core trim version which parse_ppd parse_ppm
+                 is_core trim which parse_ppd parse_ppm
                  ppd2cpan_version cpan2ppd_version tempfile what_have_you
-                 mod_search dist_search file_to_dist ppm_search fetch_readme
+                 mod_search dist_search file_to_dist fetch_nmake
                  fetch_file WIN32 HAS_CPAN HAS_PPM HAS_MB fix_path
-		 package_status module_status fetch_nmake install_package);
+		 );
 
 %EXPORT_TAGS = (all => [@exports]);
 @EXPORT_OK = (@exports);
@@ -84,9 +85,9 @@ my %Escape = ('&' => 'amp',
 	     );
 
 my %dists;
-my ($soap);
-my $soap_uri = 'http://theoryx5.uwinnipeg.ca/Apache/DocServer';
-my $soap_proxy = 'http://theoryx5.uwinnipeg.ca/cgi-bin/docserver.pl';
+my $info_soap;
+my $info_uri = 'http://theoryx5.uwinnipeg.ca/Apache/InfoServer';
+my $info_proxy = 'http://theoryx5.uwinnipeg.ca/cgi-bin/ppminfo.cgi';
 
 =head1 NAME
 
@@ -260,8 +261,8 @@ and the version number I<1.23>:
 sub file_to_dist {
   my $cpan_file = shift;
   return unless $cpan_file;
-  my ($file, $path, $suffix) = fileparse($cpan_file, $ext);
-  my ($dist, $version) = version($file);
+  my $d = CPAN::DistnameInfo->new($cpan_file);
+  my ($dist, $version) = ($d->dist, $d->version);
   unless ($dist and $version) {
       $ERROR = qq{Could not find distribution name from $cpan_file.};
       return;
@@ -301,71 +302,6 @@ sub cpan2ppd_version {
   return join ',', (split (/\./, $_), (0)x4)[0..3];
 }
 
-=item version
-
-Makes an attempt to extract the file and version number of a CPAN
-distribution file (eg, I<packagename> and I<1.23>
-from I<packagename-1.23.tar.gz>).
-
-  my $dist = 'package-1.23.tar.gz';
-  my ($file, $version) = version($dist);
-
-=cut
-
-sub version {
-  local ($_) = @_;
-  s/$ext$//;
-  s!.*/(.*)!$1!;
-
-  # remove alpha/beta postfix
-  s/([-_\d])(a|b|alpha|beta|src)$/$1/;
-
-  # jperl1.3@4.019.tar.gz
-  s/@\d.\d+//;
-
-  # oraperl-v2.4-gk.tar.gz
-  s/-v(\d)/$1/;
-
-  # lettered versions - shudder
-  s/([-_\d\.])([a-z])([\d\._])/sprintf "$1%02d$3", ord(lc $2) - ord('a') /ei;
-  s/([-_\d\.])([a-z])$/sprintf "$1%02d", ord(lc $2) - ord('a') /ei;
-
-  # thanks libwww-5b12 ;-)
-  s/(\d+)b/($1-1).'.'/e;
-  s/(\d+)a/($1-2).'.'/e;
-
-  # replace '-pre' by '0.'
-  s/-pre([\.\d])/-0.$1/;
-  s/\.\././g;
-  s/(\d)_(\d)/$1$2/g;
-
-  # chop '[-.]' and thelike
-  s/\W$//;
-
-  # ram's versions Storable-0.4@p
-   s/\@/./;
-
-  if (s/[-_]?(\d+)\.(0\d+)\.(\d+)$//) {
-    return($_, $1 + "0.$2" + $3 / 1000000);
-  } elsif (s/[-_]?(\d+)\.(\d+)\.(\d+)$//) {
-    return($_, $1 + $2/1000 + $3 / 1000000);
-  } elsif (s/[-_]?(\d+\.[\d_]+)$//) {
-    return($_, $1);
-  } elsif (s/[-_]?([\d_]+)$//) {
-    return($_, $1);
-  } elsif (s/-(\d+.\d+)-/-/) {  # perl-4.019-ref-guide
-    return($_, $1);
-  } else {
-    if ($_ =~ /\d/) {           # smells like an unknown scheme
-      #warn "Odd version Numbering: $_ \n";
-      return($_, undef);
-    } else {                    # assume version 0
-      #warn "No  version Numbering: $_ \n";
-      return($_, 0);
-    }
-
-  }
-}
 
 sub path_ext {
   if ($ENV{PATHEXT}) {
@@ -581,15 +517,15 @@ sub ppm_final {
   return $self->{_mydata};
 }
 
-sub make_soap {
+sub make_info_soap {
   unless (eval { require SOAP::Lite }) {
     $ERROR = "SOAP::Lite is unavailable to make remote call.";
     return;
   }
 
   return SOAP::Lite
-    ->uri($soap_uri)
-      ->proxy($soap_proxy,
+    ->uri($info_uri)
+      ->proxy($info_proxy,
 	      options => {compress_threshold => 10000})
 	->on_fault(sub { my($soap, $res) = @_; 
 			 warn "SOAP Fault: ", 
@@ -630,19 +566,6 @@ sub src_and_build {
   }
 }
 
-sub fetch_readme {
-  my $search = shift;
-  $soap ||= make_soap() or return; # no SOAP::Lite available
-  my $result = $soap->get_readme($search);
-  defined $result && defined $result->result or do {
-    $ERROR = "No results returned";
-    return;
-  };
-
-  my $text = $result->result();
-  return $text eq '1' ? undef : $text;
-}
-
 =item tempfile
 
 Generates the name of a random temporary file.
@@ -657,91 +580,68 @@ sub tempfile {
                              'ppm-make.' . $rand);
 }
 
-=item dist_search
+=item parse_version
 
-Uses CPAN.pm to perform a distribution search.
+Extracts a version string from a module file.
 
-  my $dist = 'libnet';
-  my $results = dist_search($dist);
-
-A case-insensitive search can be made by giving C<dist_search>
-an argument of <no_case =E<gt> 1>, while partial matches can be made
-by specifying <partial =E<gt> 1>.
-The results are returned as a hash reference of the form
-
-  foreach my $dist (keys %{$results}) {
-    print "Distribution: $dist\n";
-    print "Version: $results->{$dist}->{version}\n";
-    print "Description: $results->{$dist}->{abstract}\n";
-    print "Author: $results->{$dist}->{author}\n";
-    print "CPAN file: $results->{$dist}->{cpan_file}\n";
-  }
-
-Not all fields are guaranteed to have a value.
+  my $version = parse_version('C:/Perl/lib/CPAN.pm');
 
 =cut
 
-sub dist_search {
-  my ($query, %args) = @_;
-  $query =~ s!::!-!g;
-  my $dists;
-  foreach my $match (CPAN::Shell->expand('Distribution', qq{/$query/})) {
-    my $string = $match->as_string;
-    my $cpan_file;
-    if ($string =~ /id\s*=\s*(.*?)\n/m) {
-      $cpan_file = $1;
-      next unless $cpan_file;
-    }
-    my ($dist, $version) = file_to_dist($cpan_file);
-    unless ($args{no_case}) {
-      next unless $dist =~ /$query/;
-    }
-    unless ($args{partial}) {
-      if ($args{no_case}) {
-        next unless $dist =~ /^$query$/i;
-      }
-      else {
-        next unless $dist eq $query;
-      }
-    }
-    $dists->{$dist}->{cpan_file} = $cpan_file;
-    $dists->{$dist}->{version} = $version;
-    if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
-      $dists->{$dist}->{author} = $1;
-    }
-    my $mod;
-    if ($string =~ /\s+CONTAINSMODS\s+(\S+)/m) {
-      $mod = $1;
-    }
-    next unless $mod;
-    my $module = CPAN::Shell->expand('Module', $mod);
-    if ($module) {
-      my $desc = $module->description;
-      $dists->{$dist}->{abstract} = $desc if $desc;
-    }
+# from ExtUtils::MM_Unix
+sub parse_version {
+  my $parsefile = shift;
+  my $version;
+  local $/ = "\n";
+  my $fh;
+  unless (open($fh, $parsefile)) {
+    $ERROR = "Could not open '$parsefile': $!";
+    return;
   }
-  return $dists;
+  my $inpod = 0;
+  while (<$fh>) {
+    $inpod = /^=(?!cut)/ ? 1 : /^=cut/ ? 0 : $inpod;
+    next if $inpod || /^\s*\#/;
+    chop;
+    # next unless /\$(([\w\:\']*)\bVERSION)\b.*\=/;
+    next unless /([\$*])(([\w\:\']*)\bVERSION)\b.*\=/;
+    my $eval = qq{
+                  package ExtUtils::MakeMaker::_version;
+                  no strict;
+                  
+                  local $1$2;
+                  \$$2=undef; do {
+                    $_
+                  }; \$$2
+                 };
+    local $^W = 0;
+    $version = eval($eval);
+    warn "Could not eval '$eval' in $parsefile: $@" if $@;
+    last;
+  }
+  close $fh;
+  return $version;
 }
 
 =item mod_search
 
-Uses CPAN.pm to perform a module search.
+Uses a remote soap server or CPAN.pm to perform a module search.
 
   my $mod = 'Net::FTP';
   my $results = mod_search($mod);
 
-A case-insensitive search can be made by giving C<mod_search>
-an argument of <no_case =E<gt> 1>, while partial matches can be made
-by specifying <partial =E<gt> 1>.
-The results are returned as a hash reference of the form
+The query term must match exactly, in a case
+sensitive manner. The results are returned as a hash reference 
+of the form
 
-  foreach my $mod (keys %{$results}) {
-    print "Module: $mod\n";
-    print "Version: $results->{$mod}->{version}\n";
-    print "Description: $results->{$mod}->{abstract}\n";
-    print "Author: $results->{$mod}->{author}\n";
-    print "CPAN file: $results->{$mod}->{cpan_file}\n";
-  }
+  print <<"END";
+    Module: $results->{mod_name}
+    Version: $results->{mod_vers}
+    Description: $results->{mod_abs}
+    Author: $results->{author}
+    CPAN file: $results->{dist_file}
+    Distribution: $results->{dist_name}
+  END
 
 Not all fields are guaranteed to have a value.
 
@@ -749,11 +649,18 @@ Not all fields are guaranteed to have a value.
 
 sub mod_search {
   my ($query, %args) = @_;
+  my $results = soap_mod_search($query, %args);
+  return $results if $results;
+  warn $ERROR if $ERROR;
+  return unless HAS_CPAN;
+  return cpan_mod_search($query, %args);
+}
+
+sub cpan_mod_search {
+  my ($query, %args) = @_;
   $query =~ s!-!::!g;
   my $mods;
-  my @objs = (not $args{partial} and not $args{no_case}) ?
-    CPAN::Shell->expand('Module', $query) :
-	CPAN::Shell->expand('Module', qq{/$query/});
+  my @objs = CPAN::Shell->expand('Module', qq{/$query/});
   unless (@objs > 0) {
     $ERROR = "No results found for $query";
     return;
@@ -765,141 +672,157 @@ sub mod_search {
       $mod = $1;
       next unless $mod;
     }
-    unless ($args{no_case}) {
-      next unless $mod =~ /$query/;
-    }
-    unless ($args{partial}) {
-      if ($args{no_case}) {
-        next unless $mod =~ /^$query$/i;
-      }
-      else {
-        next unless $mod eq $query;
-      }
-    }
-
+    next unless $mod eq $query;
+    $mods->{mod_name} = $mod;
     if (my $v = $obj->cpan_version) {
-      $mods->{$mod}->{version} = $v;
+      $mods->{mod_vers} = $v;
     }
     if ($string =~ /\s+DESCRIPTION\s+(.*?)\n/m) {
-      $mods->{$mod}->{abstract} = $1;
+      $mods->{mod_abs} = $1;
     }
     if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
-      $mods->{$mod}->{author} = $1;
+      $mods->{author} = $1;
     }
     if ($string =~ /\s+CPAN_FILE\s+(\S+)\n/m) {
-      $mods->{$mod}->{cpan_file} = $1;
+      $mods->{dist_file} = $1;
     }
+    $mods->{dist_name} = file_to_dist($mods->{dist_file});
+    last;
   }
   return $mods;
 }
 
-=item ppm_search
+sub soap_mod_search {
+  my ($query, %args) = @_;
+  $query =~ s!-!::!g;
+  return unless (my $soap = make_info_soap());
+  my $result = $soap->mod_info($query);
+  eval {$result->fault};
+  if ($@) {
+      $ERROR = $@;
+      return;
+  }
+  $result->fault and do {
+      $ERROR = join ', ', 
+          $result->faultcode, 
+              $result->faultstring;
+      return;
+  };
+  my $results = $result->result();
+  if ($results) {
+    my $email = $results->{email} || $results->{cpanid} . '@cpan.org';
+    $results->{author} = $results->{fullname} . qq{ &lt;$email&gt; };
+  }
+  else {
+    $ERROR = qq{No results for "$query" were found}
+  };
+  return $results;
+}
 
-Uses PPM.pm to perform a distribution search.
+=item dist_search
+
+Uses a remote soap server or CPAN.pm to perform a distribution search.
 
   my $dist = 'libnet';
-  my $results = ppm_search($dist);
+  my $results = dist_search($dist);
 
-A case-insensitive search can be made by giving C<ppm_search>
-an argument of C<no_case =E<gt> 1>, while partial matches can be made
-by specifying C<partial =E<gt> 1>. An author or abstract query
-can be specified with C<AUTHOR =E<gt> 1> and C<ABSTRACT =E<gt> 1>,
-respectively. The search can be restricted to a given
-repository by specifying the URL as
-C<location =E<gt> $url>; otherwise, a search of all 
-available respositories is made.
-The results are returned as a hash reference of the form
+The query term must match exactly, in a case
+sensitive manner. The results are returned as a hash reference 
+of the form
 
-  foreach my $package (keys %{$results}) {
-    print "Package: $package\n";
-    print "Version: $results->{$package}->{version}\n";
-    print "Author: $results->{$package}->{author}\n";
-    print "Abstract: $results->{$package}->{abstract}\n";
-    print "Location(s): @{$results->{$package}->{repository}}\n";
-  }
+  print <<"END";
+    Distribution: $results->{dist_name}
+    Version: $results->{dist_vers}
+    Description: $results->{dist_abs}
+    Author: $results->{author}
+    CPAN file: $results->{dist_file}
+  END
 
 Not all fields are guaranteed to have a value.
 
 =cut
 
-sub ppm_search {
-  my ($searchRE, %args) = @_;
-  
-  $searchRE =~ s!::!-!g;
-  eval { $searchRE =~ /$searchRE/ };
-  if ($@) {
-    $ERROR = qq{"$searchRE" is not a valid regular expression.};
-    return;
-  }
-  $searchRE = "(?i)$searchRE" if $args{no_case};
-  $searchRE = "^$searchRE\$" unless $args{partial};
-  
-  my $searchtag;
-  for my $type(qw(AUTHOR ABSTRACT)) {
-    $searchtag = $type if $args{$type};
-  }
-  my %reps = PPM::ListOfRepositories();
-  my @locations = $args{location} || values %reps;
-  my $packages;
+sub dist_search {
+  my ($query, %args) = @_;
+  my $results = soap_dist_search($query, %args);
+  return $results if $results;
+  warn $ERROR if $ERROR;
+  return unless HAS_CPAN;
+  return cpan_dist_search($query, %args);
+}
 
-  foreach my $loc (@locations) {
-    my %summary;
-    # see if the repository has server-side searching
-    if (defined $searchRE && 
-	(%summary = ServerSearch(location => $loc, 
-				 searchRE => $searchRE, 
-				 searchtag => $searchtag))) {
-      # XXX: clean this up
-      foreach my $package (keys %{$summary{$loc}}) {
-	$packages->{$loc}->{$package} = \%{$summary{$loc}{$package}};
-      }
-      next;
+sub cpan_dist_search {
+  my ($query, %args) = @_;
+  $query =~ s!::!-!g;
+  my $dists;
+  foreach my $match (CPAN::Shell->expand('Distribution', qq{/$query/})) {
+    my $string = $match->as_string;
+    my $cpan_file;
+    if ($string =~ /id\s*=\s*(.*?)\n/m) {
+      $cpan_file = $1;
+      next unless $cpan_file;
     }
-    
-    # see if a summary file is available
-    %summary = RepositorySummary(location => $loc);
-    if (%summary) {
-      foreach my $package (keys %{$summary{$loc}}) {
-	next if (defined $searchtag && 
-		 $summary{$loc}{$package}{$searchtag} !~ /$searchRE/);
-	next if (!defined $searchtag && 
-		 defined $searchRE && $package !~ /$searchRE/);
-	$packages->{$loc}->{$package} = \%{$summary{$loc}{$package}};
-      }
+    my ($dist, $version) = file_to_dist($cpan_file);
+    next unless $dist eq $query;
+    $dists->{dist_name} = $dist;
+    $dists->{dist_file} = $cpan_file;
+    $dists->{dist_vers} = $version;
+    if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
+      $dists->{author} = $1;
     }
-    else {
-      my %ppds = PPM::RepositoryPackages(location => $loc);
-      # No summary: oh my, nothing but 'Net
-      foreach my $package (@{$ppds{$loc}}) {
-	my %package_details = 
-	  RepositoryPackageProperties(package => $package, 
-				      location => $loc);
-	next unless %package_details;
-	next if (defined $searchtag && 
-		 $package_details{$searchtag} !~ /$searchRE/);
-	next if (!defined $searchtag && 
-		 defined $searchRE && $package !~ /$searchRE/);
-	$packages->{$loc}->{$package} = \%package_details;
-      }
+    my $mod;
+    if ($string =~ /\s+CONTAINSMODS\s+(\S+)/m) {
+      $mod = $1;
+    }
+    next unless $mod;
+    my $module = CPAN::Shell->expand('Module', $mod);
+    if ($module) {
+      my $desc = $module->description;
+      $dists->{dist_abs} = $desc if $desc;
     }
   }
-  unless ($packages) {
-    $ERROR = qq{No packages found.};
+  return $dists;
+}
+
+sub soap_dist_search {
+  my ($query, %args) = @_;
+  $query =~ s!::!-!g;
+  return unless (my $soap = make_info_soap());
+  my $result = $soap->dist_info($query);
+  eval {$result->fault};
+  if ($@) {
+      $ERROR = $@;
+      return;
+  }
+  $result->fault and do {
+    $ERROR = join ', ', 
+      $result->faultcode, 
+        $result->faultstring;
     return;
+  };
+  my $results = $result->result();
+  if ($results) {
+    my $email = $results->{email} || $results->{cpanid} . '@cpan.org';
+    $results->{author} = $results->{fullname} . qq{ &lt;$email&gt; };
   }
-  my $results;
-  foreach my $location (keys %{$packages}) {
-    foreach my $pack (keys %{$packages->{$location}}) {
-      $results->{$pack}->{abstract} = 
-        $packages->{$location}->{$pack}->{ABSTRACT};
-      $results->{$pack}->{author} = 
-        $packages->{$location}->{$pack}->{AUTHOR};
-      $results->{$pack}->{version} = 
-        $packages->{$location}->{$pack}->{VERSION};
-      push @{$results->{$pack}->{repository}}, $location;
-    }
-  }
+  else {
+    $ERROR = qq{No results for "$query" were found}
+  };
   return $results;
+}
+
+=item cpan_file {
+
+Given a file of the form C<file.tar.gz> and a CPAN id
+of the form <ABCDEFG>, will return the CPAN file
+C<A/AB/ABCDEFG/file.tar.gz>.
+
+=cut
+
+sub cpan_file {
+  my ($cpanid, $file) = @_;
+  (my $cpan_loc = $cpanid) =~ s{^(\w)(\w)(.*)}{$1/$1$2/$1$2$3};
+  return qq{$cpan_loc/$file};
 }
 
 =item fetch_file
@@ -943,14 +866,14 @@ sub fetch_file {
   unless ($dist =~ /$ext$/) {
     my $mod = $dist;
     $mod =~ s!-!::!g;
-    my $results = mod_search($mod, no_case => $no_case, partial => 0);
-    unless ($dist = $results->{$mod}->{cpan_file}) {
+    my $results = mod_search($mod);
+    unless ($dist = cpan_file($results->{cpanid}, $results->{dist_file})) {
       $ERROR = qq{Cannot get distribution name of $mod.};
       return;
     }
   }
-  my $id = dirname($dist); 
-  $to = basename($dist, $ext); 
+  my $id = dirname($dist);
+  $to = basename($dist, $ext);
   my $src = HAS_CPAN ? 
     File::Spec->catdir($src_dir, 'authors/id', $id) : 
         $src_dir;
@@ -1019,216 +942,6 @@ sub url_list {
   }
   push @urls, 'ftp://ftp.cpan.org', 'http://www.cpan.org';
   return @urls;
-}
-
-=item module_status
-
-Checks the status of a module I<Foo::Bar> against
-a supplied version:
-
-  my ($module, $wanted_version) = ('Foo::Bar', 1.23);
-  my $status = module_status($module, $wanted_version);
-
-The returned value of C<$recommendation> will be 1 if
-the module is present and it's version is greater than
-or equal to the desired version. A return value of 0
-means the module is present, but it's version is less
-than the wanted version. If the module is not present,
-a value of -1 is returned. C<$wanted_version> can be
-undefined, which is interpreted to mean any version of
-the module is OK.
-
-=cut
-
-sub module_status {
-  my ($module, $desired_version) = @_;
-  my ($present, $installed_version) = have_module($module);
-  return -1 if not $present;
-  return 0 if ($desired_version and not $installed_version);
-  return 1 if (not $desired_version);
-  my $status = vcmp_cpan($installed_version, $desired_version);
-  return $status == -1 ? 0 : 1;
-}
-
-=item package_status
-
-Checks the status of a PPM package I<Foo-Bar>:
-
-  my ($pack, $wanted_version) = ('Foo-Bar', '1,2,3,4');
-  my $status = package_status($pack, $wanted_version);
-
-The returned value of C<$recommendation> will be 1 if
-the package is present and it's version is greater than
-or equal to the desired version. A return value of 0
-means the package is present, but it's version is less
-than the wanted version. If the package is not present,
-a value of -1 is returned. C<$wanted_version> can be
-undefined, which is interpreted to mean any version of
-the package is OK.
-
-=cut
-
-sub package_status {
-  my ($pack, $desired_version) = @_;
-  $pack =~ s!::!-!g;
-  my ($present, $installed_version) = have_package($pack);
-  return -1 if not $present;
-  return 0 if ($desired_version and not $installed_version);
-  return 1 if (not $desired_version);
-  my $status = vcmp_ppd($installed_version, $desired_version);
-  return $status == -1 ? 0 : 1;
-}
-
-=item have_module
-
-Checks to see if a module I<Foo::Bar> is already installed:
-
-  my $module = "Foo::Bar";
-  my ($present, $version) = have_module($module);
-
-If not present, C<$present> will be undefined. Note that
-even if the module is present, C<$version> may be undefined.
-
-=cut
-
-sub have_module {
-  my $mod = shift;
-  $mod =~ s!-!::!g;
-  (my $file = $mod) =~ s!::!/!g;
-  $file .= '.pm';
-  my $parsefile;
-  foreach (@INC) {
-    next if $_ eq '.';
-    my $candidate = File::Spec->catfile($_, $file);
-    if (-e $candidate) {
-      $parsefile = $candidate;
-      last;
-    }
-  }
-  unless ($parsefile) {
-    $ERROR = qq{Cannot find pm file corresponding to $mod.};
-    return;
-  }
-  my $version = parse_version($parsefile);
-  return (1, $version);
-}
-
-=item parse_version
-
-Extracts a version string from a module file.
-
-  my $version = parse_version('C:/Perl/lib/CPAN.pm');
-
-=cut
-
-# from ExtUtils::MM_Unix
-sub parse_version {
-  my $parsefile = shift;
-  my $version;
-  local $/ = "\n";
-  my $fh;
-  unless (open($fh, $parsefile)) {
-    $ERROR = "Could not open '$parsefile': $!";
-    return;
-  }
-  my $inpod = 0;
-  while (<$fh>) {
-    $inpod = /^=(?!cut)/ ? 1 : /^=cut/ ? 0 : $inpod;
-    next if $inpod || /^\s*\#/;
-    chop;
-    # next unless /\$(([\w\:\']*)\bVERSION)\b.*\=/;
-    next unless /([\$*])(([\w\:\']*)\bVERSION)\b.*\=/;
-    my $eval = qq{
-                  package ExtUtils::MakeMaker::_version;
-                  no strict;
-                  
-                  local $1$2;
-                  \$$2=undef; do {
-                    $_
-                  }; \$$2
-                 };
-    local $^W = 0;
-    $version = eval($eval);
-    warn "Could not eval '$eval' in $parsefile: $@" if $@;
-    last;
-  }
-  close $fh;
-  return $version;
-}
-
-=item have_package
-
-Checks to see if a PPM package I<Foo-Bar> is already installed:
-
-  my $pack = "Foo-Bar";
-  my ($present, $version) = have_package($pack);
-
-If not present, C<$present> will be undefined. Note that
-C<$version>, being the ppd version string, is expected 
-always to be defined.
-
-=cut
-
-sub have_package {
-  my $package = shift;
-  $package =~ s!::!-!g;
-  my $version;
-  my %installed = PPM::InstalledPackageProperties();
-  if (my $pkg = (grep {/^$package$/} keys %installed)[0]) {
-    $version = $installed{$pkg}{'VERSION'};
-  }
-  else {
-    $ERROR = qq{Could not determine version of $package};
-    return;
-  }
-  return (1, $version);
-}
-
-=item vcmp_ppd
-
-Compares two ppd version strings ($s1, $s2), and returns 1 
-if $s1 > $s2, 0 if $s1 == $s2, and -1 if $s1 < $s2.
-
-  my $s1 = '1,2,3,4'; # the installed version
-  my $s2 = '2,3,4,5'; # a potential upgrade
-  my $cmp = vcmp_ppd($s1, $s2);
-
-=cut
-
-sub vcmp_ppd {
-  my ($s1, $s2) = @_;
-  my @installed = split (',', $s1);
-  my @compare = split (',', $s2);
-  my $available;
-  foreach(0..3) {
-    next if $installed[$_] == $compare[$_];
-    $available-- if $installed[$_] < $compare[$_];
-    $available++ if $installed[$_] > $compare[$_];
-    last;
-  }
-  return $available;
-}
-
-=item vcmp_cpan
-
-Compares two CPAN version strings ($s1, $s2), and returns 1 
-if $s1 > $s2, 0 if $s1 == $s2, and -1 if $s1 < $s2.
-
-  my $s1 = '1.23'; # the installed version
-  my $s2 = '4.56'; # a potential upgrade
-  my $cmp = vcmp_cpan($s1, $s2);
-
-=cut
-
-# borrowed from CPAN.pm
-sub vcmp_cpan {
-    my ($l, $r) = @_;
-    local($^W) = 0;
-    return 0 if $l eq $r; # short circuit for quicker success
-    return
-        ($l ne "undef") <=> ($r ne "undef") ||
-            $l <=> $r ||
-                $l cmp $r;
 }
 
 =item fetch_nmake
@@ -1319,46 +1032,6 @@ sub prompt {
   }
   
   return $ans;
-}
-
-sub install_package {
-  my ($package, %args) = @_;
-  my $version = $args{version};
-  die "Please specify a version" unless $version;
-  my $upgrade = $args{upgrade};
-  my $location = $args{location};
-  unless ($location) {
-    $ERROR = "Please specify a location";
-    return;
-  }
-  my $status = 
-      package_status($package, $version);
-  if ($status == 1) {
-    $ERROR = "Version $version of $package is already installed";
-    return;
-  }
-  if ($status == 0 and not $upgrade) {
-    $ERROR = qq{Specify the upgrade switch to upgrade $package.};
-    return;
-  }
-  print "Installing $package ...\n";
-  if ($status == -1) {
-    PPM::InstallPackage(package => $package,
-                        location => $location) 
-        or do {
-          $ERROR = "Could not install $package: $PPM::PPMERR";
-          return;
-        };
-  }
-  else {
-    PPM::UpgradePackage(package => $package,
-                        location => $location) 
-        or do {
-          $ERROR = "Could not install $package: $PPM::PPMERR";
-          return;
-        };
-  }
-  return 1;
 }
 
 sub what_have_you {

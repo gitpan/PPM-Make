@@ -39,7 +39,7 @@ sub new {
 sub check_opts {
   my %opts = @_;
   my %legal = 
-    map {$_ => 1} qw(force ignore dist program upgrade remove no_case);
+    map {$_ => 1} qw(force ignore dist program upgrade remove);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_'\n";
@@ -68,8 +68,7 @@ sub make_ppm {
     my $build_dir = $PPM::Make::Util::build_dir;
     chdir $build_dir or die "Cannot chdir to $build_dir: $!";
     print "Working directory: $build_dir\n"; 
-    unless ($dist = fetch_file($dist, no_case => $self->{opts}->{no_case}, 
-                               partial => 0)) {
+    unless ($dist = fetch_file($dist)) {
       die $ERROR;
     }
 #      if ($dist =~ m!$protocol! 
@@ -121,24 +120,10 @@ sub ppm_install {
     system(@args) == 0 or die "Cannot install/upgrade $self->{ppd}: $?";
   }
   else {
-    my $status = 
-      package_status($package, cpan2ppd_version($version));
-    die "Version $version of $package is already installed"
-      if $status == 1;
-    if ($status == 0 and not $self->{opts}->{upgrade}) {
-      die qq{Specify the upgrade switch to upgrade $package.};
-    }
-    my @args;
-    if ($status == -1) {
-      PPM::InstallPackage(package => $package,
-                          location => $cwd) 
-          or die "Could not install $package: $PPM::PPMERR";
-    }
-    else {
-      PPM::UpgradePackage(package => $package,
-                          location => $cwd) 
-          or die "Could not install $package: $PPM::PPMERR";    
-    }
+    my @args = $self->{opts}->{upgrade} ?
+      ('ppm', 'verify', '--upgrade', $self->{ppd}) :
+        ('ppm', 'install', $self->{ppd});
+    system(@args) == 0 or die "Cannot install/upgrade $self->{ppd}: $?";
   }
   return unless $self->{opts}->{remove};
   my $file = $self->{file};
@@ -196,11 +181,6 @@ will be removed after a successful install.
 By default, if C<PPM::Make::Install> detects a F<blib/> directory,
 it will assume the distribution has already been made, and
 will not remake it. This option forces remaking the distribution.
-
-=item no_case => 1
-
-If specified, module searches will be performed in a case-insensitive
-manner.
 
 =item upgrade => 1
 

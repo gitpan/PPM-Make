@@ -1,5 +1,18 @@
 Revision history for Perl extension PPM::Make.
 
+0.74 Fri Aug 27 2004
+  - add Net::FTP debug messages (thanks to Jeff McCarrell)
+  - honor presence of $ENV{HOME}, if present, on Win32
+    in looking for the .ppmcfg configuration file (thanks to
+    Jeff McCarrell)
+  - fix bug where the AUTHOR was reported as an ARRAY ref
+    in the ppd file when META.yaml was used
+  - attempt to read Module::Build's information file
+    only when the _build directory is present.
+  - in getting author information, as well as module/distribution
+    mappings, in filling out the ppd file, now first try a remote
+    soap server, and if that fails, fall back to the CPAN indices.
+
 0.71 Fri Apr 2 11:00:00 2004
   - fix bug in ppm_install for ppm3
   - use $^X rather than $Config{perlpath} for perl binary
