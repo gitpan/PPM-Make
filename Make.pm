@@ -15,7 +15,7 @@ require File::Spec;
 use Pod::Html;
 use constant WIN32 => $^O eq 'MSWin32';
 use vars qw($VERSION);
-$VERSION = '0.38';
+$VERSION = '0.41';
 my @path_ext = ();
 
 my %Escape = ('&' => 'amp',
@@ -23,6 +23,8 @@ my %Escape = ('&' => 'amp',
 	      '<' => 'lt',
 	      '"' => 'quot'
 	     );
+
+my $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)};
 
 my $has_myconfig = 0;
 if ($ENV{HOME}) {
@@ -420,6 +422,8 @@ sub parse_makepl {
 sub parse_make {
   my $self = shift;
   my $flag = 0;
+  my @wanted = qw(NAME DISTNAME ABSTRACT ABSTRACT_FROM AUTHOR VERSION_FROM);
+  my $re = join '|', @wanted;
   my @lines;
   open(MAKE, 'Makefile') or die "Couldn't open Makefile: $!";
   while (<MAKE>) {
@@ -429,6 +433,7 @@ sub parse_make {
     }
     next unless $flag;
     last if /MakeMaker post_initialize/;
+    next unless /$re/;
     chomp;
     s/^#*\s+// or next;
     push @lines, $_;
@@ -436,11 +441,12 @@ sub parse_make {
   close(MAKE);
   my $make = join ',', @lines;
   $make = '(' . $make . ')';
+  print "$make\n";
   my $c = new Safe();
   my %r = $c->reval($make);
-  die "Eval of Makefile.PL failed: $@" if ($@);
+  die "Eval of Makefile failed: $@" if ($@);
   die 'Cannot determine NAME in Makefile' unless $r{NAME};
-  for (qw(NAME DISTNAME ABSTRACT ABSTRACT_FROM AUTHOR VERSION_FROM)) {
+  for (@wanted) {
     $self->{args}->{$_} = $r{$_} unless $self->{args}->{$_};
   }
   return 1;
@@ -814,7 +820,7 @@ sub fix_ppd {
       or die "Couldn't rename $name.ppd to $name-$v.ppd: $!";
     $name .= "-$v";
   }
-  my $ppd = $name . '.ppd';  
+  my $ppd = $name . '.ppd';
   my $copy = $ppd . '.in';
   rename($ppd, $copy) or die "Couldn't rename $ppd to $copy: $!";
 
@@ -902,9 +908,10 @@ END
 
   if (scalar @{$d->{DEPENDENCY}} > 0) {
     foreach (@{$d->{DEPENDENCY}}) {
-      print $fh qq{\t\t<DEPENDENCY NAME="$_->{NAME}" VERSION="$_->{VERSION}" />\n};
+      my $dist = mod_to_dist($_->{NAME});
+      next if (not $dist or $dist =~ m!^perl-5!);
+      print $fh qq{\t\t<DEPENDENCY NAME="$dist" VERSION="$_->{VERSION}" />\n};
     }
-    
   }
   foreach (qw(OS ARCHITECTURE)) {
     print $fh qq{\t\t<$_ NAME="$d->{$_}->{NAME}" />\n} if $self->{$_};
@@ -918,6 +925,69 @@ END
   print $fh qq{\t</IMPLEMENTATION>\n</SOFTPKG>\n};
   $fh->close;
 
+}
+
+sub mod_to_dist {
+  my $mod = shift;
+  $mod =~ s!-!::!g;
+  my $module = CPAN::Shell->expand('Module', $mod);
+  return unless $module;
+  (my $file = $module->cpan_file) =~ s!.*/(.*)$ext!$1!;
+  my ($dist, $version) = version($file);
+  return ($dist and $version) ? $dist : undef;
+}
+
+sub version {
+  local ($_) = @_;
+
+  # remove alpha/beta postfix
+  s/([-_\d])(a|b|alpha|beta|src)$/$1/;
+
+  # jperl1.3@4.019.tar.gz
+  s/@\d.\d+//;
+
+  # oraperl-v2.4-gk.tar.gz
+  s/-v(\d)/$1/;
+
+  # lettered versions - shudder
+  s/([-_\d\.])([a-z])([\d\._])/sprintf "$1%02d$3", ord(lc $2) - ord('a') /ei;
+  s/([-_\d\.])([a-z])$/sprintf "$1%02d", ord(lc $2) - ord('a') /ei;
+
+  # thanks libwww-5b12 ;-)
+  s/(\d+)b/($1-1).'.'/e;
+  s/(\d+)a/($1-2).'.'/e;
+
+  # replace '-pre' by '0.'
+  s/-pre([\.\d])/-0.$1/;
+  s/\.\././g;
+  s/(\d)_(\d)/$1$2/g;
+
+  # chop '[-.]' and thelike
+  s/\W$//;
+
+  # ram's versions Storable-0.4@p
+   s/\@/./;
+
+  if (s/[-_]?(\d+)\.(0\d+)\.(\d+)$//) {
+    return($_, $1 + "0.$2" + $3 / 1000000);
+  } elsif (s/[-_]?(\d+)\.(\d+)\.(\d+)$//) {
+    return($_, $1 + $2/1000 + $3 / 1000000);
+  } elsif (s/[-_]?(\d+\.[\d_]+)$//) {
+    return($_, $1);
+  } elsif (s/[-_]?([\d_]+)$//) {
+    return($_, $1);
+  } elsif (s/-(\d+.\d+)-/-/) {  # perl-4.019-ref-guide
+    return($_, $1);
+  } else {
+    if ($_ =~ /\d/) {           # smells like an unknown scheme
+      #warn "Odd version Numbering: $_ \n";
+      return($_, undef);
+    } else {                    # assume version 0
+      #warn "No  version Numbering: $_ \n";
+      return($_, 0);
+    }
+
+  }
 }
 
 sub init {
