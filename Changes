@@ -1,9 +1,10 @@
 Revision history for Perl extension PPM::Make.
 
-0.49 Thu May  8 10:08:00 2003
-  - search for abstracts in pod
-  - s/if/unless/ for excluding man pages for Win32
-  - fix some warnings
+
+0.52 Wed Jun 13 14:08:00 2003
+  - add ppm_install script to install via ppm
+  - fix for extracting name from a distribution
+  - try urls as specified in $CPAN::Config
 
 0.48 Wed Feb 18 12:48:00 2003
 

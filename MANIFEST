@@ -6,5 +6,6 @@ MANIFEST.SKIP
 README
 INSTALL
 make_ppm
+ppm_install
 t/test.t
 t/ppm.cfg

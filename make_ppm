@@ -97,6 +97,7 @@ for (qw(ppd ar host user passwd)) {
   $upload{$_} = delete $opts{$_};
 }
 $opts{upload} = \%upload if defined $upload{ppd};
+$opts{dist} = $dist if $dist;
 
 my $ppm = PPM::Make->new(%opts);
 $ppm->make_ppm();

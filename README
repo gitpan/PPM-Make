@@ -6,7 +6,8 @@ SYNOPSIS
       $ppm->make_ppm();
 
 DESCRIPTION
-    See the supplied "make_ppm" script for a command-line interface.
+    See the supplied "make_ppm" and "ppm_install" scripts
+    for command-line interfaces.
 
     This module automates somewhat some of the steps needed to make a ppm
     (Perl Package Manager) package from a CPAN distribution. It attempts to

@@ -17,7 +17,7 @@ require File::Spec;
 use Pod::Html;
 use constant WIN32 => $^O eq 'MSWin32';
 use vars qw($VERSION);
-$VERSION = '0.49';
+$VERSION = '0.52';
 my @path_ext = ();
 
 my %Escape = ('&' => 'amp',
@@ -26,7 +26,7 @@ my %Escape = ('&' => 'amp',
 	      '"' => 'quot'
 	     );
 
-my $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)};
+my $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)$};
 my $protocol = qr{^(http|ftp)://};
 
 my $has_myconfig = 0;
@@ -83,7 +83,7 @@ sub new {
     my $home = (WIN32 ? '/.ppmcfg' : "$ENV{HOME}/.ppmcfg");
     $file = $home if (-e $home);
   }
-  if ($file) {
+  if ($file and not $opts{install}) {
     %cfg = read_cfg($file, $arch) or die "\nError reading config file";
   }
   
@@ -376,12 +376,24 @@ sub fetch_dist {
     die qq{Cannot get distribution name of $mod}
       unless ($dist = $module->cpan_file);
   }
-  my $from = ($dist =~ m!$protocol!) ? $dist :
-    'http://www.cpan.org/authors/id/' . $dist;
+  my $from;
   (my $to = $dist) =~ s!.*/(.*)!$1!;
-  print "Fetching $from ....\n";
-  die "Failed to get $dist" 
-    unless (is_success(getstore($from, $to)));
+  if ($dist =~ m!$protocol!) {
+      $from = $dist;
+      print "Fetching $from ....\n";
+      die "Failed to get $dist" 
+          unless (is_success(getstore($from, $to)));
+  }
+  else {
+      my $urllist = $CPAN::Config->{urllist} || [];
+      push @$urllist, 'http://www.cpan.org';
+      foreach my $url(@$urllist) {
+          $from = $url . '/authors/id/' . $dist;
+          print "Fetching $from ...\n";
+          last if is_success(getstore($from, $to));
+      }
+  }
+  die "Failed to get $dist\n" unless -e $to;
   return $to;
 }
 
@@ -391,7 +403,7 @@ sub extract_dist {
   my $has = $self->{has};
   my ($tar, $gzip, $unzip) = @$has{qw(tar gzip unzip)};
 
-  my ($name, $path, $suffix) = fileparse($file, $self->{ext});
+  my ($name, $path, $suffix) = fileparse($file, $ext);
  EXTRACT: {
     if ($suffix eq '.zip') {
       ($unzip eq 'Archive::Zip') && do {
@@ -1637,7 +1649,7 @@ It is distributed under the same terms as Perl itself.
 
 =head1 SEE ALSO
 
-L<make_ppm>, and L<PPM>.
+L<make_ppm>, L<ppm_install>, and L<PPM>.
 
 =cut
 

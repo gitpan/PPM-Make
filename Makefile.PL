@@ -189,7 +189,7 @@ WARN
 WriteMakefile(
 	      NAME	     => 'PPM::Make',
 	      VERSION_FROM => 'Make.pm',
-	      EXE_FILES    => ['make_ppm'],
+	      EXE_FILES    => ['make_ppm', 'ppm_install'],
               dist         => {COMPRESS => 'gzip', SUFFIX => 'gz'},
 	      PREREQ_PM    => \%prereqs,
 	      ($] >= 5.005 ?   
