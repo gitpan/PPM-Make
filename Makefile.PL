@@ -149,6 +149,30 @@ DEATH
   }
 }
 
+eval{require PPM; };
+if ($@) {
+  print <<'WARN';
+
+I could not find the PPM module, used to install packages.
+I can add PPM to the list of prerequisites to  install, if 
+you like.
+
+WARN
+  my $ans = prompt('Add PPM?', 'yes');
+  if ($ans =~ /^y/i) {
+    $prereqs{'PPM'} = 0;
+  }
+  else {
+    print <<'WARN';
+
+The package will still be able to function in creating
+ppm files, but cannot install them.
+
+WARN
+    
+  }
+}
+
 WriteMakefile(
 	      NAME	     => 'PPM::Make',
 	      VERSION_FROM => 'Make.pm',

@@ -1,5 +1,22 @@
 Revision history for Perl extension PPM::Make.
 
+0.28 Sat Nov 16 15:48:00 2002
+
+  - add option to add files to archive
+  - change make_ppm to use Getopt::Long
+
+0.27 Thu Nov  7 10:55:00 2002
+
+  - use blib/ files to make html
+       [ Mirko <mirko@stranicata.com> ]
+ 
+0.26 Sat Nov  2 10:55:00 2002
+
+  - adjust html path for more than 2-level module name
+       [ Mirko <mirko@stranicata.com> ]
+  - added options to install and clean up files
+       [ Mirko <mirko@stranicata.com> ]
+
 0.25 Thu Sep  5 09:42:48 2002
 
   - use XML::Parser to parse ppd file

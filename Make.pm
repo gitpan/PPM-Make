@@ -2,7 +2,7 @@ package PPM::Make;
 use strict;
 #use warnings;
 use Cwd;
-use Pod::Find qw(pod_find);
+use Pod::Find qw(pod_find contains_pod);
 use File::Basename;
 use File::Path;
 use File::Find;
@@ -14,7 +14,7 @@ use LWP::Simple qw(getstore is_success);
 require File::Spec;
 use constant WIN32 => $^O eq 'MSWin32';
 use vars qw($VERSION);
-$VERSION = '0.25';
+$VERSION = '0.28';
 my @path_ext = ();
 
 my $has_myconfig = 0;
@@ -33,8 +33,8 @@ sub new {
   my ($class, %opts) = @_;
 
   my %legal = 
-    map {$_ => 1} qw(force ignore binary zip 
-		     dist script exec os arch arch_sub);
+    map {$_ => 1} qw(force ignore binary zip install clean
+                     dist script exec os arch arch_sub add);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_' ... ignoring\n";
@@ -43,7 +43,6 @@ sub new {
 
   my $self = {
 	      opts => \%opts || {},
-	      html => 'blib/html/site/lib',
 	      ext => qr/(\.tar\.gz|\.tar\.Z|\.tgz|\.zip)$/,
 	      protocol => qr!(http|ftp|file)://!,
 	      cwd => '',
@@ -51,6 +50,9 @@ sub new {
 	      args => {},
 	      abstract => '',
 	      author => '',
+	      ppd => '',
+	      html => 'blib/html',
+	      file => '',
 	     };
   path_ext() if WIN32;
   $self->{has} = what_have_you();
@@ -93,6 +95,10 @@ sub what_have_you {
   for (qw(tar gzip make perl)) {
     die "Cannot find a '$_' program" unless $has{$_};
   }
+
+  eval{require PPM; };
+  $has{ppm} = 1 unless $@;
+
   return \%has;
 }
 
@@ -109,10 +115,12 @@ sub make_ppm {
     print "Extracting files from $dist ....\n";
     my $name = $self->extract_dist($dist);
     chdir $name or die "Cannot chdir to $name: $!";
+    $self->{file} = $dist;
   }
   my $force = $self->{opts}->{force};
   $self->{cwd} = cwd;
   $self->check_script() if $self->{opts}->{script};
+  $self->check_files() if $self->{opts}->{add};
   $self->adjust_binary() if $self->{opts}->{arch_sub};
   $self->build_dist() 
     unless (-d 'blib' and -f 'Makefile' and not $force);
@@ -123,6 +131,10 @@ sub make_ppm {
   $self->make_html() unless (-d 'blib/html' and not $force);
   $dist = $self->make_dist();
   $self->fix_ppd($dist);
+  if ($self->{opts}->{install}) {
+    die 'Must have the ppm utility to install' unless $self->{has}->{ppm};
+    $self->ppm_install();
+  }
 }
 
 sub check_script {
@@ -133,6 +145,19 @@ sub check_script {
   $self->{opts}->{script} = $file;
   return if (-e $file);
   copy($script, $file) or die "Copying $script to $self->{cwd} failed: $!";
+}
+
+sub check_files {
+  my $self = shift;
+  my @entries = ();
+  foreach my $file (@{$self->{opts}->{add}}) {
+    my ($name, $path, $suffix) = fileparse($file, '\..*');
+    my $entry = $name . $suffix;
+    push @entries, $entry;
+    next if (-e $entry);
+    copy($file, $entry) or die "Copying $file to $self->{cwd} failed: $!";
+  }
+  $self->{opts}->{add} = \@entries if @entries;
 }
 
 sub fetch_dist {
@@ -435,64 +460,62 @@ sub guess_author {
 
 sub make_html {
   my $self = shift;
-  my $html = $self->{html};
   my $args = $self->{args};
   my $cwd = $self->{cwd};
+  my $html = $self->{html};
   unless (-d $html) {
     mkpath($html, 1, 0755) or die "Couldn't mkdir $html: $!";
   }
-  my %pods = pod_find({verbose => 1}, $cwd);
+  my %pods = pod_find({-verbose => 1}, "$cwd/blib/");
+  if (-d "$cwd/blib/script/") {
+    finddepth( sub 
+	       {$pods{$File::Find::name} = 
+		  "script::" . basename($File::Find::name) 
+		    if (-f $_ and not /\.bat$/ and contains_pod($_));
+	      }, "$cwd/blib/script");
+  }
+  
   eval {require Pod::Tree};
   my $has_pod_tree = 1 unless $@;
-  foreach (keys %pods) {
-    (my $infile = File::Spec->abs2rel($_)) =~ s!^\w+:!!;
+
+  foreach my $pod (keys %pods){
+    my @dirs = split /::/, $pods{$pod};
+    my $isbin = ((shift @dirs) eq 'script');
+
+    (my $infile = File::Spec->abs2rel($pod)) =~ s!^\w+:!!;
     $infile =~ s!\\!/!g;
-    next if $infile =~ m!(blib/|Makefile.PL|/t/)!;
-    (my $outfile = $infile) =~ s!(.*)\.\w+!$1.html!;
-    my $dir = dirname($infile);
-    my $fulldir;
-    if ($dir =~ m!lib/!) {
-      $dir =~ s!lib/!!;
-      $outfile =~ s!lib/!!;
-      ($fulldir = File::Spec->catdir($html, $dir)) =~ s!\\!/!g;
-      ($outfile = File::Spec->catfile($html, $outfile)) =~ s!\\!/!g;
-    }
-    elsif ($dir eq 'lib') {
-      $dir = '';
-      $outfile =~ s!lib/!!;
-      ($fulldir = File::Spec->catdir($html, $dir)) =~ s!\\!/!g;
-      ($outfile = File::Spec->catfile($html, $outfile)) =~ s!\\!/!g;     
-    }
-    else {
-      my $top = $args->{NAME};
-      $top =~ s!^([^:]+).*!$1!;
-      if ($dir =~ m!^$top! or ($dir eq '.' and $outfile =~ m!$top.html!)) {
-	($fulldir = File::Spec->catdir($html, $dir)) =~ s!\\!/!g;
-	($outfile = File::Spec->catfile($html, $outfile)) =~ s!\\!/!g;
-      }
-      else {
-	($fulldir = File::Spec->catdir($html, $top, $dir)) =~ s!\\!/!g;
-	($outfile = File::Spec->catfile($html, $top, $outfile)) =~ s!\\!/!g;
-     }
-    }
+    my $outfile = (pop @dirs) . '.html';
+
+    my @rootdirs  = $isbin? ('bin') : ('site', 'lib');
     
-    unless (-d $fulldir) {
-      mkpath($fulldir, 1, 0755) or die "Couldn't mkdir $fulldir: $!";
+    (my $fulldir = File::Spec->catfile($html, @rootdirs, @dirs)) =~ s!\\!/!g;
+    unless (-d $fulldir){
+      mkpath($fulldir, 1, 0755) 
+	or die "Couldn't mkdir $fulldir: $!";  
+    }
+    ($outfile = File::Spec->catfile($fulldir, $outfile)) =~ s!\\!/!g;
+    
+    my @args = ('pod2html');
+    if (not $has_pod_tree and $pods{$pod}) {
+      push @args, qq{--title="$pods{$pod}"};
+    }
+        
+    if ($self->{has}->{ppm}) {
+      my $csslink = '../' x (@rootdirs+@dirs);
+      push @args, "--css=${csslink}Active.css";
     }
     
     unless ($has_pod_tree) {
       $infile = "--infile=$infile ";
       $outfile = "--outfile=$outfile ";
     }
-    my $title = qq{--title="$pods{$_}"} if $pods{$_};
-    my @args = ('pod2html', $infile, $outfile);
-    unless ($has_pod_tree) {
-      push @args, $title if $title;
-    }
+
+    push @args, $infile, $outfile;
     
     print "@args\n";
     system(@args) == 0 or warn "@args failed: $?";
   }
+  ###################################
 }
 
 sub make_dist {
@@ -514,6 +537,10 @@ sub make_dist {
   }
 
   my $script = $self->{opts}->{script};
+  my @files;
+  if ($self->{opts}->{add}) {
+    @files = @{$self->{opts}->{add}};
+  }
 
   my $arc = $force_zip ? ($name . '.zip') : ($name . '.tar.gz');
   unless ($self->{opts}->{force}) {
@@ -528,7 +555,14 @@ sub make_dist {
       my $arc = Archive::Tar->new();
       finddepth(sub {push @f, $File::Find::name; 
 		     print $File::Find::name,"\n"}, 'blib');
-      push @f, $script if $script;
+      if ($script) {
+	push @f, $script;
+	print "$script\n";
+      }
+      if (@files) {
+	push @f, @files;
+	print join "\n", @files;
+      }
       $arc->add_files(@f);
       $arc->write($name, 1);
       last DIST;
@@ -536,7 +570,14 @@ sub make_dist {
     ($tar and $gzip and not $force_zip) && do {
       $name .= '.tar';
       my @args = ($tar, 'cvf', $name, 'blib');
-      push @args, $script if $script;
+      if ($script) {
+	push @args, $script;
+	print "$script\n";
+      }
+      if (@files) {
+	push @args, @files;
+	print join "\n", @files;
+      }
       print "@args\n";
       system(@args) == 0 or die "@args failed: $?";
       @args = ($gzip, $name);
@@ -549,7 +590,16 @@ sub make_dist {
       $name .= '.zip';
       my $arc = Archive::Zip->new();
       $arc->addTree('blib', 'blib', sub{print "$_\n";});
-      $arc->addTree($script, $script) if $script;
+      if ($script) {
+	$arc->addTree($script, $script);
+	print "$script\n";
+      }
+      if (@files) {
+	for (@files) {
+	  $arc->addTree($_, $_);
+	  print "$_\n";
+	}
+      }
       die "Writing to $name failed" 
 	unless $arc->writeToFileNamed($name) == AZ_OK();
       last DIST;
@@ -557,8 +607,15 @@ sub make_dist {
     ($zip) && do {
       $name .= '.zip';
       my @args = ($zip, '-r', $name, 'blib');
-      push @args, $script if $script;
-       system(@args) == 0 or die "@args failed: $?";
+      if ($script) {
+	push @args, $script;
+	print "$script\n";
+      }
+      if (@files) {
+	push @args, @files;
+	print join "\n", @files;
+      }
+      system(@args) == 0 or die "@args failed: $?";
       last DIST;
     };
     die "Cannot make archive for $name";
@@ -614,7 +671,24 @@ sub fix_ppd {
   }
 
   print_ppd($d, $ppd);
+  $self->{ppd} = $ppd;
   unlink $copy or warn "Couldn't unlink $copy: $!";
+}
+
+sub ppm_install {
+  my $self = shift;
+  PPM::InstallPackage(package => $self->{ppd});
+  return unless $self->{opts}->{clean};
+  my $file = $self->{file};
+  unless ($file) {
+    warn "Cannot clean files unless a distribution is specified";
+    return;
+  }
+  chdir('..') or die "Cannot move up one directory: $!";
+  print "About to remove $self->{cwd} ...\n";
+  rmtree($self->{cwd}) or warn "Cannot remove $self->{cwd}: $!";
+  print "About to remove $file ....\n";
+  unlink $file or warn "Cannot unlink $file: $!";
 }
 
 sub parse_ppd {
@@ -785,6 +859,8 @@ sub which {
 
 1;
 
+__END__
+
 =head1 NAME
 
 PPM::Make - Make a ppm package from a CPAN distribution
@@ -855,6 +931,11 @@ setting the I<EXEC> attribute of the I<INSTALL> field
 in the ppd file. This defaults to C<perl> when a value
 of I<script> is specified.
 
+=item  add => \@files
+
+The specified array reference contains a list of files
+outside of the F<blib> directory to be added to the archive. 
+
 =item zip => boolean
 
 By default, a I<.tar.gz> distribution will be built, if possible. 
@@ -882,6 +963,16 @@ for the I<NAME> attribute of the I<OS> field of the ppd file.
 
 If specified, this value will be used instead of the default
 for the I<NAME> attribute of the I<ARCHITECTURE> field of the ppd file.
+
+=item install => boolean
+
+If specified, the C<ppm> utility will be used to install
+the module.
+
+=item remove => boolean
+
+If specified, the directory used to build the ppm distribution
+(with the I<dist> option) will be removed after a successful install.
 
 =back
 
@@ -971,6 +1062,14 @@ the I<HREF> attribute of the I<CODEBASE> field.
 Two routines are used in doing this - C<parse_ppd>, for
 parsing the ppd file, and C<print_ppd>, for generating
 the modified file.
+
+=item install the distribution
+
+If the I<install> option is specified, the C<ppm> utility,
+if available, will be used to install the distribution.
+The I<clean> option, if specified, will remove the build
+directory and the distribution file for a distribution
+specified with the I<dist> option.
 
 =back
 

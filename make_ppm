@@ -3,9 +3,25 @@
 use strict;
 # use warnings;
 use PPM::Make;
-use Getopt::Std;
+use Getopt::Long;
 my %opts = ();
-getopts('hvzfinb:s:e:o:a:', \%opts);
+my @files = ();
+my $result = GetOptions(\%opts, 
+			'l|install',
+			'z|zip',
+			'f|force',
+			'i|ignore',
+			'b|binary=s',
+                        'n|arch_sub',
+			's|script=s',
+			'e|exec=s',
+			'o|os=s',
+			'a|arch=s',
+			'v|version',
+			'h|help',
+			'r|remove',
+			'x|add=s' => \@files,
+		       );
 if ($opts{v}) {
   print <<"END";
 
@@ -18,37 +34,32 @@ END
   exit;
 }
 
-foreach (qw(b s o e a)) {
-    if (exists $opts{$_} and not defined $opts{$_} ) {
-	print <<"END";
-No value set for option '$_'.
-See '$0 -h' for help.
-END
-    die;
-}
-}
 
-if ($opts{h}) {
+if ($opts{h} or not $result) {
   print <<"END";
 
 Usage: $0 [options] [Module | Distribution]
 
 Options:
-   -z           : make a zip distribution
-   -f           : force remaking a distribution
-   -i           : ignore any failing test results
-   -b location  : specify the binary location
-   -n           : use \$Config{archname} as a subdirectory
-   -s script    : specify a script in the <INSTALL> field
-   -e exec      : specify the executable to run the <INSTALL> script
-   -o os        : use os for the <OS> field
-   -a arch      : use arch for the <ARCHITECTURE> field
-   -v           : print version information and exit
-   -h           : print this help screen
+ [-z | --zip]              : make a zip distribution
+ [-f | --force]            : force remaking a distribution
+ [-i | --ignore]           : ignore any failing test results
+ [-b | --binary] location  : specify the binary location
+ [-n | --arch_sub]         : use \$Config{archname} as a subdirectory
+ [-s | --script] script    : specify a script in the <INSTALL> field
+ [-x | --add] file         : add specified extra files to the archive
+ [-e | --exec] exec        : specify the executable to run the <INSTALL> script
+ [-x | --add] file         : add file to the archive
+ [-o | --os] os            : use os for the <OS> field
+ [-a | --arch] arch        : use arch for the <ARCHITECTURE> field
+ [-v | --version]          : print version information and exit
+ [-h | --help]             : print this help screen
+ [-l | --install]          : install the package after building
+ [-r | --remove]           : remove the build directory after installation
 
 Additional Arguments:
    Module       : specify a module to fetch (requires CPAN.pm)
-   Distribtion  : specify a distribution to fetch
+   Distribution : specify a distribution to fetch
 
 With no arguments, make_ppm will build a distribution
 inside the current directory. See 'perldoc make_ppm'.
@@ -62,7 +73,9 @@ my $ppm = PPM::Make->new(zip => $opts{z}, force => $opts{f},
                          ignore => $opts{i}, binary => $opts{b},
                          dist => $dist, script => $opts{s},
 			 exec => $opts{e}, os => $opts{o},
-			 arch => $opts{a}, arch_sub => $opts{n});
+                         arch => $opts{a}, arch_sub => $opts{n},
+			 install => $opts{l}, clean => $opts{r},
+			 add => \@files);
 $ppm->make_ppm();
 
 __END__
@@ -105,54 +118,54 @@ Available options include:
 
 =over
 
-=item -z
+=item [-z | --zip]
 
 By default, C<make_ppm> will build a C<.tar.gz> distribution
 if possible. This option forces a C<.zip> distribution to be made.
 
-=item -f
+=item [-f | --force]
 
 By default, if C<make_ppm> detects a F<blib/> directory,
 it will assume the distribution has already been made, and
 will not remake it. This option forces remaking the distribution.
 
-=item -i
+=item [-i | --ignore]
 
 By default, C<make_ppm>, if it is building the distribution,
 will die if all tests do not pass. Turning on this option
 instructs C<make_ppm> to ignore any test failures.
 
-=item -b location
+=item [-b | --binary] location
 
 I<location> is used as the value for the C<BINARY_LOCATION>
 attribute passed to C<perl Makefile.PL>, and is used in
 setting the I<HREF> attribute of the I<CODEBASE> field
 in the ppd file.
 
-=item -n
+=item [-n | --arch_sub]
 
 This option will insert the value of C<$Config{archname}>
 (or the value of the I<-a> option, if given)
 as a relative subdirectory in the I<HREF> attribute of the 
 I<CODEBASE> field in the ppd file.
 
-=item -o os
+=item  [-o | --os] os
 
 If specified, this value will be used instead of the default
 for the I<NAME> attribute of the I<OS> field of the ppd file.
 
-=item -a arch
+=item [-a | --arch] arch
 
 If specified, this value will be used instead of the default
 for the I<NAME> attribute of the I<ARCHITECTURE> field of the ppd file.
 
-=item -s script
+=item  [-s | --script] script
 
 This will be used in the I<PPM_INSTALL_SCRIPT>
 attribute passed to C<perl Makefile.PL>, and arises in
 setting the value of the I<INSTALL> field in the ppd file.
 
-=item -e exec
+=item [-e | -- exec] exec
 
 This will be used in the I<PPM_INSTALL_EXEC>
 attribute passed to C<perl Makefile.PL>, and arises in
@@ -160,11 +173,27 @@ setting the I<EXEC> attribute of the I<INSTALL> field
 in the ppd file. This defaults to C<perl> when a value
 of I<script> is specified.
 
-=item -h
+=item  [-x | --add] file
+
+This option, which can be specified multiple times, can
+be used to add additional files outside of the the F<blib>
+directory to the archive.
+
+=item [-l | --install]
+
+If specified, the C<ppm> utility will be used to install
+the module.
+
+=item [-r | --remove]
+
+If specified, the directory used to build the ppm distribution
+given on the command line will be removed after a successful install.
+
+=item [-h | --help]
 
 This prints out a short help screen and exits.
 
-=item -v
+=item [-v | --version]
 
 This prints out some version information and exits.
 
