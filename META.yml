@@ -1,6 +1,7 @@
+# http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         PPM-Make
-version:      0.66
+version:      0.67
 version_from: lib/PPM/Make.pm
 installdirs:  site
 requires:
@@ -8,11 +9,10 @@ requires:
     File::Spec:                    0
     Getopt::Long:                  2.33
     LWP:                           0
-    Module::Build:                 0
     Pod::Find:                     0.23
     Pod::Usage:                    1
     XML::Parser:                   2
     YAML:                          0
 
 distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.13
+generated_by: ExtUtils::MakeMaker version 6.21

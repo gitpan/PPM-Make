@@ -56,7 +56,7 @@ my $is_Win32 = ($d->{OS}->{NAME} =~ /Win32/i);
 
 my @f;
 if ($is_Win32) {
-  finddepth(sub { 
+  finddepth(sub {return unless -f $_; 
                  push @f, $File::Find::name unless
                      $File::Find::name =~ m!blib/man\d!;
 		 print $File::Find::name,"\n"}, 'blib');
@@ -88,13 +88,12 @@ else {
 
 ok($#f, $#files);
 unlink ($ppd, $tgz, "t/$ppd", "t/$tgz");
-my $os = 'homer-simpson';
 $arch = 'c-wren';
 my $url = 'http://www.disney.com/ppmpackages/';
 my $script = 'README';
 my $exec = 'notepad.exe';
 my @args = ($ppm->{has}->{perl}, '-Mblib', 'make_ppm',
-	'-n', '-o', $os, '-a', $arch, '-b', $url,
+        '-n', '-a', $arch, '-b', $url,
         '-s', $script, '-e', $exec, '--no_cfg');
 system(@args) == 0 or die "system @args failed: $?";
 
@@ -113,7 +112,7 @@ ok($d->{SOFTPKG}->{NAME}, $name);
 ok($d->{TITLE}, $name);
 ok($d->{ABSTRACT}, $abstract);
 ok($d->{AUTHOR}, $author);
-ok($d->{OS}->{NAME}, $os);
+ok($d->{OS}->{NAME}, $Config{osname});
 ok($d->{ARCHITECTURE}->{NAME}, $arch);
 ok($d->{CODEBASE}->{HREF}, $url . $arch . '/' . $tgz); 
 ok($d->{INSTALL}->{SCRIPT}, $script);
@@ -121,8 +120,18 @@ ok($d->{INSTALL}->{EXEC}, $exec);
 
 @f = ();
 @files = ();
-finddepth(sub {push @f, $File::Find::name; 
-	       print $File::Find::name,"\n"}, 'blib');
+if ($is_Win32) {
+  finddepth(sub {return unless -f $_; 
+                 push @f, $File::Find::name unless
+                     $File::Find::name =~ m!blib/man\d!;
+		 print $File::Find::name,"\n"}, 'blib');
+}
+else {
+  finddepth(sub {push @f, $File::Find::name; 
+		print $File::Find::name,"\n"}, 'blib');
+}
+#finddepth(sub {push @f, $File::Find::name; 
+#               print $File::Find::name,"\n"}, 'blib');
 
 if ($tar eq 'Archive::Tar' and $gzip eq 'Compress::Zlib') {
    require Archive::Tar;

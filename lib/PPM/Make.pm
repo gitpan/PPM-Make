@@ -19,7 +19,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.66';
+$VERSION = '0.67';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -823,7 +823,7 @@ sub make_dist {
       my @f;
       my $arc = Archive::Tar->new();
       if ($is_Win32) {
-        finddepth(sub { 
+        finddepth(sub { return unless -f $_;
                        push @f, $File::Find::name
                           unless $File::Find::name =~ m!blib/man\d!;
 		       print $File::Find::name,"\n"}, 'blib');

@@ -6,7 +6,7 @@ use PPM::Make::Util qw(:all);
 use Config;
 use Cwd;
 our ($VERSION);
-$VERSION = '0.66';
+$VERSION = '0.67';
 
 sub new {
   my ($class, %opts) = @_;

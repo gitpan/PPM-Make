@@ -1053,7 +1053,7 @@ sub dialog_yes_no {
   my ($title, $msg) = @_;
   my $ans = $mw->messageBox(-title => $title, -message => $msg,
 			    -icon => 'warning', -type => 'YesNo');
-  return ($ans eq 'yes') ? 1 : 0;
+  return ($ans =~ /^yes$/i) ? 1 : 0;
 }
 
 

@@ -1,5 +1,10 @@
 Revision history for Perl extension PPM::Make.
 
+0.67 Thu Nov 20 20:08:00 2003
+  - fix bug in tk-ppm regarding dialogue_yes_no
+  - on Win32, only list files in making archive (not directories),
+    to quieten newer Archive::Tar
+
 0.66 Wed Sep 10 10:08:00 2003
   - add documentation for PPM::Make::Install
   - add version for PPM::Make::Install and PPM::Make::Util
