@@ -2,88 +2,37 @@
 
 use strict;
 # use warnings;
-use Getopt::Long qw(:config no_ignore_case);
+use Getopt::Long qw(:config no_ignore_case auto_version auto_help);
 use PPM::Make;
+use Pod::Usage;
+$main::VERSION = $PPM::Make::VERSION;
 my %opts = ();
 my @files = ();
 my %progs = ();
-my $result = GetOptions(\%opts, 
-			'install|l',
-			'zip|z',
-			'force|f',
-			'ignore|i',
-			'binary|b:s',
-                        'arch_sub|n',
-			'script|s:s',
-			'exec|e:s',
-			'os|o:s',
-			'arch|a:s',
-			'version|v',
-			'help|h',
-			'remove|r',
-			'as|A!',
-			'vs|V',
-			'add|x:s' => \@files,
-			'program|p:s' => \%progs,
-			'ppd:s',
-			'ar:s',
-			'host:s',
-			'user:s',
-			'passwd:s',
-		       );
-if ($opts{v}) {
-  print <<"END";
-
-This is make_ppm, running PPM::Make version $PPM::Make::VERSION.
-
-Copyright 2002, Randy Kobes <randy\@theoryx5.uwinnipeg.ca>.
-This program is distributed under the same terms as Perl itself.
-
-END
-  exit;
-}
-
-
-if ($opts{h} or not $result) {
-  print <<"END";
-
-Usage: $0 [options] [Module | Distribution]
-
-Options:
- [-z | --zip]              : make a zip distribution
- [-f | --force]            : force remaking a distribution
- [-i | --ignore]           : ignore any failing test results
- [-b | --binary] location  : specify the binary location
- [-n | --arch_sub]         : use \$Config{archname} as a subdirectory
- [-s | --script] script    : specify a script in the <INSTALL> field
- [-x | --add] file         : add specified extra files to the archive
- [-e | --exec] exec        : specify the executable to run the <INSTALL> script
- [-x | --add] file         : add file to the archive
- [-o | --os] os            : use os for the <OS> field
- [-a | --arch] arch        : use arch for the <ARCHITECTURE> field
- [-v | --version]          : print version information and exit
- [-h | --help]             : print this help screen
- [-l | --install]          : install the package after building
- [-r | --remove]           : remove the build directory after installation
- [-p | --program]  b=a     : specify "a" to be used for the "b" program
- [-A | --as]               : add Perl version number to ARCHITECTURE (>= 5.8)
- [-V | --ppmv]             : add version string to ppd and archive filenames
- [ --ppd ]  location       : copy the ppd to the specified location
- [ --ar ]   location       : copy the archive file to the specified location
- [ --host]  host           : use the specified host for copying the ppm files
- [ --user]  user           : username to use when trasnferring ppm files
- [ --passwd] password      : password associated with user
-
-Additional Arguments:
-   Module       : specify a module to fetch (requires CPAN.pm)
-   Distribution : specify a distribution to fetch
-
-With no arguments, make_ppm will build a distribution
-inside the current directory. See 'perldoc make_ppm'.
-
-END
-  exit;
-}
+GetOptions(\%opts,
+           'zip|z',
+           'force|f',
+           'ignore|i',
+           'cpan',
+           'no_cfg',
+           'no_case',
+           'binary|b:s',
+           'arch_sub|n',
+           'script|s:s',
+           'exec|e:s',
+           'os|o:s',
+           'arch|a:s',
+           'remove|r',
+           'as|A!',
+           'vs|V',
+           'add|x:s' => \@files,
+           'program|p:s' => \%progs,
+           'ppd:s',
+           'ar:s',
+           'host:s',
+           'user:s',
+           'passwd:s',
+          ) or pod2usage(2);
 
 my $dist = shift;
 my %upload = ();
@@ -106,20 +55,47 @@ __END__
 
 =head1 NAME
 
-make_ppm - script to make a PPM distribution
+make_ppm - make a PPM distribution
 
 =head1 SYNOPSIS
 
    make_ppm [options] [Module | Distribution]
 
-   # make a PPM from within an already unpacked source distribution
-   C:\.cpan\build\package_src> make_ppm 
+Options:
 
-   # fetch from CPAN a module distribution and build a PPM
-   C:\.cpan\build> make_ppm Net::FTP
+ [-z | --zip]              : make a zip distribution
+ [-f | --force]            : force remaking a distribution
+ [-i | --ignore]           : ignore any failing test results
+ [-b | --binary] location  : specify the binary location
+ [-n | --arch_sub]         : use \$Config{archname} as a subdirectory
+ [-s | --script] script    : specify a script in the <INSTALL> field
+ [-x | --add] file         : add specified extra files to the archive
+ [-e | --exec] exec        : specify the executable to run the <INSTALL> script
+ [-x | --add] file         : add file to the archive
+ [-o | --os] os            : use os for the <OS> field
+ [-a | --arch] arch        : use arch for the <ARCHITECTURE> field
+ [-v | --version]          : print version information and exit
+ [-h | --help]             : print this help screen
+ [-r | --remove]           : remove the build directory after installation
+ [-p | --program]  b=a     : specify "a" to be used for the "b" program
+ [-A | --as]               : add Perl version number to ARCHITECTURE (>= 5.8)
+ [-V | --ppmv]             : add version string to ppd and archive filenames
+ [ --ppd ]  location       : copy the ppd to the specified location
+ [ --ar ]   location       : copy the archive file to the specified location
+ [ --host]  host           : use the specified host for copying the ppm files
+ [ --user]  user           : username to use when transferring ppm files
+ [ --passwd] password      : password associated with user
+ [ --cpan ]                : make a CPAN distribution
+ [ --no_case ]             : for module searches, ignore case
+ [ --no_cfg ]              : do not read a .ppmcfg configuration file
 
-   # fetch a distribution and build a PPM
-   C:\.cpan\build> make_ppm ftp://wherever.com/package.tar.gz
+Additional Arguments:
+
+   Module       : specify a module to fetch (requires CPAN.pm)
+   Distribution : specify a distribution to fetch
+
+With no arguments, make_ppm will build a distribution
+inside the current directory. 
 
 =head1 DESCRIPTION
 
@@ -139,7 +115,8 @@ I<http://someplace.org/package.tar.gz>) will be interpreted
 as distributions to fetch and build.
 
 Options can be read from a configuration file
-(see L<PPM::Make>) and/or given as options to I<make_ppm>.
+(see L<PPM::Make>) and/or given as options to I<make_ppm>,
+unless the I<no_cfg> option is given.
 In case of duplicates, the options to I<make_ppm> take
 precedence. Available options include:
 
@@ -212,11 +189,6 @@ This option, which can be specified multiple times, can
 be used to add additional files outside of the the F<blib>
 directory to the archive.
 
-=item [-l | --install]
-
-If specified, the C<ppm> utility will be used to install
-the module.
-
 =item [-r | --remove]
 
 If specified, the directory used to build the ppm distribution
@@ -269,11 +241,26 @@ practice. Specify C<--noas> to disable this option.
 This option will add a version string (based on the VERSION reported
 in the ppd file) to the ppd and archive filenames.
 
-=item [-h | --help]
+=item [--cpan]
+
+If specified, a distribution will be made using C<make dist>
+which will include the I<ppd> and I<archive> file.
+
+=item [--no_case]
+
+If specified, module searches will be performed in a case-insensitive
+manner.
+
+=item [--no_cfg]
+
+If specified, do not attempt to read a F<.ppmcfg> configuration
+file.
+
+=item [--help]
 
 This prints out a short help screen and exits.
 
-=item [-v | --version]
+=item [--version]
 
 This prints out some version information and exits.
 

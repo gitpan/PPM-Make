@@ -9,9 +9,11 @@ use constant WIN32 => $^O eq 'MSWin32';
 my %prereqs = ('Pod::Find' => 0.23,
 	       'File::Spec' => 0,
 	       'LWP' => 0,
+	       'YAML' => 0,
 	       'XML::Parser' => 2,
-	       'Getopt::Long' => 2.32,
+               'Getopt::Long' => 2.33,
 	       'Config::IniFiles' => 0,
+               'Pod::Usage' => 1,
 	       );
 
 my $home = $ENV{HOME};
@@ -27,17 +29,29 @@ unless ($has_myconfig) {
 }
 
 if ($@) {
-  die <<'DEATH';
+  die <<'WARN';
     
 It appears you have yet to configure the CPAN.pm module.
-PPM::Make requires this to map module to distribution names. 
+PPM::Make would use this to map module to distribution names. 
 You can configure CPAN.pm by typing
 
     C:\> perl -MCPAN -e shell
 
 and following through the dialogue.
 
-DEATH
+WARN
+}
+my $sys_config = $INC{'CPAN/Config.pm'};
+if (not $has_myconfig and not WIN32 and not -w $sys_config) {
+  die <<"WARN";
+
+You do not have the right permissions to use the settings 
+in $sys_config. I would suggest 
+creating a CPAN::MyConfig module under $home,
+in a .cpan/CPAN/ directory. See the CPAN.pm documentation
+for details.
+
+WARN
 }
 
 my @path_ext = ();
@@ -45,8 +59,8 @@ path_ext();
 
 eval {require Archive::Tar; require Compress::Zlib};
 if ($@) {
-  my $tar = $Config{tar} || $CPAN::Config->{tar} || which('tar');
-  my $gzip = $Config{gzip} || $CPAN::Config->{gzip} || which('gzip');
+  my $tar = $Config{tar} || which('tar') || $CPAN::Config->{tar} ;
+  my $gzip = $Config{gzip} || which('gzip') || $CPAN::Config->{gzip};
   if ($tar and $gzip) {
     print "Will use $tar and $gzip for .tar.gz archives\n";
   }
@@ -81,8 +95,8 @@ else {
 
 eval {require Archive::Zip;};
 if ($@) {
-  my $zip = $Config{zip} || $CPAN::Config->{zip} || which('zip');
-  my $unzip = $Config{unzip} || $CPAN::Config->{unzip} || which('unzip');
+  my $zip = $Config{zip} || which('zip') || $CPAN::Config->{zip};
+  my $unzip = $Config{unzip} || which('unzip') || $CPAN::Config->{unzip};
   if ($zip and $unzip) {
     print "Will use $zip and $unzip for .zip archives\n";
   }
@@ -135,7 +149,7 @@ WARN
   }
 }
 
-my $make = $Config{make} || $CPAN::Config->{make} || which('make');
+my $make = $Config{make} || which('make') || $CPAN::Config->{make};
 if ($make) {
   print "Will use '$make' as your make program\n";
 }
@@ -162,12 +176,36 @@ NMAKE
   }
 }
 
+eval{require Module::Build; };
+if ($@) {
+  print <<'WARN';
+
+I could not find Module::Build, which is necessary to
+install (a growing number of) packages. I can add this
+to the list of prerequisites to install, if you like.
+
+WARN
+  my $ans = prompt('Add Module::Build?', 'yes');
+  if ($ans =~ /^y/i) {
+    $prereqs{'Module::Build'} = 0;
+  }
+  else {
+    print <<'WARN';
+
+The package is still usable, but will not be able to handle
+distributions requiring Module::Build.
+
+WARN
+    
+  }
+}
+
 eval{require PPM; };
 if ($@) {
   print <<'WARN';
 
 I could not find the PPM module, used to install packages.
-I can add PPM to the list of prerequisites to  install, if 
+I can add PPM to the list of prerequisites to install, if 
 you like.
 
 WARN
@@ -186,14 +224,41 @@ WARN
   }
 }
 
+eval{require PPM::Repositories; };
+if ($@ and WIN32) {
+  print <<'WARN';
+
+The PPM::Repositories is needed for the tk-ppm script
+(a Tk interface to ppm) in order to provide a list of
+available repositories. I can add this to the list of
+prerequisites to install, if you like.
+
+WARN
+  my $ans = prompt('Add PPM::Repositories?', 'yes');
+  if ($ans =~ /^y/i) {
+    $prereqs{'PPM::Repositories'} = 0;
+  }
+  else {
+    print <<'WARN';
+
+The tk-ppm script will not be usable, but the rest of
+the scripts and modules will be fine.
+
+WARN
+    
+  }
+}
+
+my @exe_files = qw(make_ppm ppm_install);
+push @exe_files, 'tk-ppm' if WIN32;
 WriteMakefile(
-	      NAME	     => 'PPM::Make',
-	      VERSION_FROM => 'Make.pm',
-	      EXE_FILES    => ['make_ppm', 'ppm_install'],
+              NAME         => 'PPM::Make',
+              VERSION_FROM => 'lib/PPM/Make.pm',
+              EXE_FILES    => [@exe_files],
               dist         => {COMPRESS => 'gzip', SUFFIX => 'gz'},
 	      PREREQ_PM    => \%prereqs,
 	      ($] >= 5.005 ?   
-	       (ABSTRACT_FROM => 'Make.pm',
+               (ABSTRACT_FROM => 'lib/PPM/Make.pm',
 		AUTHOR     => 'Randy Kobes <randy@theory.uwinnipeg.ca>') : ()),
 	     );
 
@@ -233,12 +298,15 @@ sub which {
 sub fetch_nmake {
   my $nmake = 'nmake15.exe';
   my $r = 'http://download.microsoft.com/download/vc15/Patch/1.52/W95/EN-US/Nmake15.exe';
-  eval {require LWP::Simple; import LWP::Simple qw(getstore)};
+  eval {require LWP::Simple; import LWP::Simple qw(getstore is_success)};
   if ($@) {
     warn "LWP::Simple is needed to get $nmake";
     return;
   }
-  getstore($r, $nmake);
+  unless (is_success(getstore($r, $nmake))) {
+    warn "Could not fetch $nmake";
+    return;
+  }
   unless (-e $nmake) {
     warn "Getting $nmake failed";
     return;

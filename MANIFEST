@@ -1,4 +1,6 @@
-Make.pm
+lib/PPM/Make.pm
+lib/PPM/Make/Util.pm
+lib/PPM/Make/Install.pm
 Changes
 Makefile.PL
 MANIFEST
@@ -7,5 +9,7 @@ README
 INSTALL
 make_ppm
 ppm_install
+tk-ppm
 t/test.t
 t/ppm.cfg
+META.yml                                Module meta-data (added by MakeMaker)

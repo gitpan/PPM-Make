@@ -14,7 +14,6 @@ use PPM::Make;
 use Config;
 use File::Path;
 use File::Find;
-$ENV{PPM_CFG} = "$cwd/t/bogus";
 ok(1); # If we made it this far, we're ok.
 
 #########################
@@ -22,7 +21,7 @@ ok(1); # If we made it this far, we're ok.
 # Insert your test code below, the Test module is use()ed here so read
 # its man page ( perldoc Test ) for help writing this test script.
 
-my $ppm = PPM::Make->new(upload => {ppd => "$cwd/t"});
+my $ppm = PPM::Make->new(upload => {ppd => "$cwd/t"}, no_cfg => 1);
 ok($ppm);
 my $name = 'PPM-Make';
 my $ppd = $name . '.ppd';
@@ -95,8 +94,8 @@ my $url = 'http://www.disney.com/ppmpackages/';
 my $script = 'README';
 my $exec = 'notepad.exe';
 my @args = ($ppm->{has}->{perl}, '-Mblib', 'make_ppm',
-	'-n', '-o', $os, '-a', $arch, '-b', $url, 
-        '-s', $script, '-e', $exec);
+	'-n', '-o', $os, '-a', $arch, '-b', $url,
+        '-s', $script, '-e', $exec, '--no_cfg');
 system(@args) == 0 or die "system @args failed: $?";
 
 for ($ppd, $tgz) {

@@ -1,5 +1,15 @@
 Revision history for Perl extension PPM::Make.
 
+0.65 Mon Jun 23 14:08:00 2003
+  - move the install option of PPM::Make to PPM::Make::Install
+  - add the tk-ppm script
+  - add support for packages using Module::Build
+  - add YAML support
+  - let Getopt::Long handle help and version options
+  - add option to build cpan distribution
+  - add checksum check on downloaded CPAN files
+  - add option to perform case-insensitive module searches
+  - put utility functions in PPM::Make::Util
 
 0.52 Wed Jun 13 14:08:00 2003
   - add ppm_install script to install via ppm

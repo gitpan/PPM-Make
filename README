@@ -7,7 +7,10 @@ SYNOPSIS
 
 DESCRIPTION
     See the supplied "make_ppm" and "ppm_install" scripts
-    for command-line interfaces.
+    for command-line interfaces. As well, for Win32 there is
+    a script "tk-ppm" which supplies a Tk graphical interface
+    to the ppm utility as well as the ppm install utility of
+    PPM::Make.
 
     This module automates somewhat some of the steps needed to make a ppm
     (Perl Package Manager) package from a CPAN distribution. It attempts to
