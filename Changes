@@ -1,5 +1,15 @@
 Revision history for Perl extension PPM::Make.
 
+0.75 Sat Set 4 2004
+  - adjust the routines for getting module and distribution
+    information to accept an array reference of values, and
+    return a corresponding hash reference. This cuts down
+    particularly on repeated calls to the soap server for
+    distributions with more than one prerequisite.
+  - fix bug in calling dist_search/mod_search with wrong
+    args in some cases when guessing author
+  - fix parsing of YAML file in extracting AUTHOR field, if present
+
 0.74 Fri Aug 27 2004
   - add Net::FTP debug messages (thanks to Jeff McCarrell)
   - honor presence of $ENV{HOME}, if present, on Win32

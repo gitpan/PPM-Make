@@ -18,7 +18,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.74';
+$VERSION = '0.75';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -473,8 +473,8 @@ sub parse_build {
 sub parse_yaml {
   my $self = shift;
   my $props = LoadFile('META.yml');
-  my $author = ($props->{AUTHOR} and ref($props->{AUTHOR} eq 'ARRAY')) ?
-    $props->{AUTHOR}->[0] : $props->{AUTHPR};
+  my $author = ($props->{author} and ref($props->{author}) eq 'ARRAY') ?
+    $props->{author}->[0] : $props->{author};
   my %r = ( NAME => $props->{name},
             DISTNAME => $props->{distname},
             VERSION => $props->{version},
@@ -623,6 +623,16 @@ sub guess_abstract {
     $result = parse_abstract($args->{NAME}, $hit);
     return $result if $result;
   }
+  if (my $try = $args->{NAME}) {
+    $try =~ s{-}{::}g;
+    $result = mod_search($try);
+    return $result->{mod_abs} if ($result and defined $result->{mod_abs});
+  }
+  if (my $try = $args->{DISTNAME}) {
+    $try =~ s{::}{-}g;
+    $result = dist_search($try);
+    return $result->{dist_abs} if ($result and defined $result->{dist_abs});
+  }
   return;
 }
 
@@ -653,7 +663,7 @@ sub author {
   unless ($args->{AUTHOR}) {
     if (my $author = $self->guess_author()) {
       $self->{args}->{AUTHOR} = $author;
-      warn qq{Setting author to "$author" ...\n};
+      warn qq{Setting AUTHOR to "$author"\n};
     }
     else {
       warn "Please check AUTHOR in the ppd file\n";
@@ -665,12 +675,17 @@ sub guess_author {
   my $self = shift;
   my $args = $self->{args};
   my $results;
-  for ($args->{DISTNAME}, $args->{NAME}) {
-    next unless $_;
-    $results = dist_search($_);
-    last if $results;
+  if (my $try = $args->{NAME}) {
+    $try =~ s{-}{::}g;
+    $results = mod_search($try);
+    return $results->{author} if ($results and defined $results->{author});
   }
-  return $results ? $results->{author} : undef;
+  if (my $try = $args->{DISTNAME}) {
+    $try =~ s{::}{-}g;
+    $results = dist_search($try);
+    return $results->{author} if ($results and defined $results->{author});
+  }
+  return;
 }
 
 sub make_html {
@@ -928,14 +943,25 @@ sub make_ppd {
     }
   }
   
+  my $mod_ref;
   foreach my $dp (keys %{$args->{PREREQ_PM}}) {
     next if ($dp eq 'perl' or is_core($dp));
-    my $results = mod_search($dp);
-    next unless (defined $results->{mod_name});
-    my $dist = $results->{dist_name};
-    next if (not $dist or $dist =~ m!^perl$! or $dist =~ m!^Test!);
-    $self->{prereq_pm}->{$dist} = 
-      $d->{PREREQ_PM}->{$dist} = cpan2ppd_version($args->{PREREQ_PM}->{$dp});
+    $dp =~ s{-}{::}g;
+    push @$mod_ref, $dp;
+  }
+  if ($mod_ref and ref($mod_ref) eq 'ARRAY') {
+    my $matches = mod_search($mod_ref);
+    if ($matches and ref($matches) eq 'HASH') {
+      foreach my $dp(keys %$matches) {
+        my $results = $matches->{$dp};
+        next unless (defined $results and defined $results->{mod_name});
+        my $dist = $results->{dist_name};
+        next if (not $dist or $dist =~ m!^perl$! or $dist =~ m!^Test!);
+        $self->{prereq_pm}->{$dist} = 
+          $d->{PREREQ_PM}->{$dist} = 
+            cpan2ppd_version($args->{PREREQ_PM}->{$dp});
+      }
+    }
   }
 
   foreach (qw(OS ARCHITECTURE)) {

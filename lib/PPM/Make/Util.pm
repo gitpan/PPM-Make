@@ -645,6 +645,11 @@ of the form
 
 Not all fields are guaranteed to have a value.
 
+If an array reference is passed to C<mod_search> containing
+a list of modules to be queried, a corresponding
+hash reference is returned, the keys being the query terms
+and the values being a hash reference as above.
+
 =cut
 
 sub mod_search {
@@ -658,43 +663,53 @@ sub mod_search {
 
 sub cpan_mod_search {
   my ($query, %args) = @_;
-  $query =~ s!-!::!g;
-  my $mods;
-  my @objs = CPAN::Shell->expand('Module', qq{/$query/});
-  unless (@objs > 0) {
-    $ERROR = "No results found for $query";
-    return;
+  my $ref = ref($query) eq 'ARRAY' ? 1 : 0;
+  my @mods = $ref ? (@$query) : ($query);
+  my $results;
+  foreach my $m (@mods) {
+    my @objs = CPAN::Shell->expand('Module', qq{/$m/});
+    unless (@objs > 0) {
+      $ERROR = "No results found for $query";
+      return;
+    }
+    my $mods;
+    foreach my $obj(@objs) {
+      my $string = $obj->as_string;
+      my $mod;
+      if ($string =~ /id\s*=\s*(.*?)\n/m) {
+        $mod = $1;
+        next unless $mod;
+      }
+      next unless $mod eq $m;
+      $mods->{mod_name} = $mod;
+      if (my $v = $obj->cpan_version) {
+        $mods->{mod_vers} = $v;
+      }
+      if ($string =~ /\s+DESCRIPTION\s+(.*?)\n/m) {
+        $mods->{mod_abs} = $1;
+      }
+      if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
+        $mods->{author} = $1;
+      }
+      if ($string =~ /\s+CPAN_FILE\s+(\S+)\n/m) {
+        $mods->{dist_file} = $1;
+      }
+      $mods->{dist_name} = file_to_dist($mods->{dist_file});
+      last;
+    }
+    if ($ref) {
+      $results->{$m} = $mods; 
+    }
+    else {
+      $results = $mods;
+      last;
+    }
   }
-  foreach my $obj(@objs) {
-    my $string = $obj->as_string;
-    my $mod;
-    if ($string =~ /id\s*=\s*(.*?)\n/m) {
-      $mod = $1;
-      next unless $mod;
-    }
-    next unless $mod eq $query;
-    $mods->{mod_name} = $mod;
-    if (my $v = $obj->cpan_version) {
-      $mods->{mod_vers} = $v;
-    }
-    if ($string =~ /\s+DESCRIPTION\s+(.*?)\n/m) {
-      $mods->{mod_abs} = $1;
-    }
-    if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
-      $mods->{author} = $1;
-    }
-    if ($string =~ /\s+CPAN_FILE\s+(\S+)\n/m) {
-      $mods->{dist_file} = $1;
-    }
-    $mods->{dist_name} = file_to_dist($mods->{dist_file});
-    last;
-  }
-  return $mods;
+  return $results;
 }
 
 sub soap_mod_search {
   my ($query, %args) = @_;
-  $query =~ s!-!::!g;
   return unless (my $soap = make_info_soap());
   my $result = $soap->mod_info($query);
   eval {$result->fault};
@@ -710,8 +725,17 @@ sub soap_mod_search {
   };
   my $results = $result->result();
   if ($results) {
-    my $email = $results->{email} || $results->{cpanid} . '@cpan.org';
-    $results->{author} = $results->{fullname} . qq{ &lt;$email&gt; };
+    if (ref($query) eq 'ARRAY') {
+      foreach my $entry (keys %$results) {
+        my $info = $results->{$entry};
+        my $email = $info->{email} || $info->{cpanid} . '@cpan.org';
+        $info->{author} = $info->{fullname} . qq{ &lt;$email&gt; };
+      }
+    }
+    else {
+      my $email = $results->{email} || $results->{cpanid} . '@cpan.org';
+      $results->{author} = $results->{fullname} . qq{ &lt;$email&gt;};
+    }
   }
   else {
     $ERROR = qq{No results for "$query" were found}
@@ -740,6 +764,11 @@ of the form
 
 Not all fields are guaranteed to have a value.
 
+If an array reference is passed to C<dist_search> with a list
+of distributions to be queried, a corresponding
+hash reference is returned, the keys being the query terms
+and the values being a hash reference as above.
+
 =cut
 
 sub dist_search {
@@ -753,40 +782,50 @@ sub dist_search {
 
 sub cpan_dist_search {
   my ($query, %args) = @_;
-  $query =~ s!::!-!g;
-  my $dists;
-  foreach my $match (CPAN::Shell->expand('Distribution', qq{/$query/})) {
-    my $string = $match->as_string;
-    my $cpan_file;
-    if ($string =~ /id\s*=\s*(.*?)\n/m) {
-      $cpan_file = $1;
-      next unless $cpan_file;
+  my $ref = ref($query) eq 'ARRAY' ? 1 : 0;
+  my @dists = $ref ? (@$query) : ($query);
+  my $results;
+  foreach my $d (@dists) {
+    my $dists;
+    foreach my $match (CPAN::Shell->expand('Distribution', qq{/$d/})) {
+      my $string = $match->as_string;
+      my $cpan_file;
+      if ($string =~ /id\s*=\s*(.*?)\n/m) {
+        $cpan_file = $1;
+        next unless $cpan_file;
+      }
+      my ($dist, $version) = file_to_dist($cpan_file);
+      next unless $dist eq $d;
+      $dists->{dist_name} = $dist;
+      $dists->{dist_file} = $cpan_file;
+      $dists->{dist_vers} = $version;
+      if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
+        $dists->{author} = $1;
+      }
+      my $mod;
+      if ($string =~ /\s+CONTAINSMODS\s+(\S+)/m) {
+        $mod = $1;
+      }
+      next unless $mod;
+      my $module = CPAN::Shell->expand('Module', $mod);
+      if ($module) {
+        my $desc = $module->description;
+        $dists->{dist_abs} = $desc if $desc;
+      }
     }
-    my ($dist, $version) = file_to_dist($cpan_file);
-    next unless $dist eq $query;
-    $dists->{dist_name} = $dist;
-    $dists->{dist_file} = $cpan_file;
-    $dists->{dist_vers} = $version;
-    if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
-      $dists->{author} = $1;
+    if ($ref) {
+      $results->{$d} = $dists; 
     }
-    my $mod;
-    if ($string =~ /\s+CONTAINSMODS\s+(\S+)/m) {
-      $mod = $1;
-    }
-    next unless $mod;
-    my $module = CPAN::Shell->expand('Module', $mod);
-    if ($module) {
-      my $desc = $module->description;
-      $dists->{dist_abs} = $desc if $desc;
+    else {
+      $results = $dists;
+      last;
     }
   }
-  return $dists;
+  return $results;
 }
 
 sub soap_dist_search {
   my ($query, %args) = @_;
-  $query =~ s!::!-!g;
   return unless (my $soap = make_info_soap());
   my $result = $soap->dist_info($query);
   eval {$result->fault};
