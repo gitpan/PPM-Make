@@ -1,5 +1,27 @@
 Revision history for Perl extension PPM::Make.
 
+0.38 Fri Dec  6 20:48:00 2002
+
+  - capability to add version string to ppd and archive filenames
+       [Toby Johnson <Toby.Johnson@mercer.com>]
+  - make possible to omit ARCHITECTURE and OS fields
+       [Mike Schilli <m@perlmeister.com>]
+  - workaround for creating .tar.gz files on non-Win32 for Win32
+       [Mike Schilli <m@perlmeister.com>]
+  - add Perl string to ARCHITECTURE for >= 5.8
+  - omit man pages if OS or ARCHITECTURE is missing
+
+
+0.36 Thu Nov 28 16:48:00 2002
+
+  - better linking of HTML docs, using only Pod::Html
+       [ Mirko <mirko@stranicata.com> ]
+  - make program locations configurable
+       [Toby Johnson <Toby.Johnson@mercer.com>]
+  - don't include man/ directories for a Windows ppm
+       [Mike Schilli <m@perlmeister.com>]
+  - use a more descriptive title for the HTML docs
+
 0.28 Sat Nov 16 15:48:00 2002
 
   - add option to add files to archive

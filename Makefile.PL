@@ -1,4 +1,5 @@
 use ExtUtils::MakeMaker;
+use strict;
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
 use Config;
@@ -9,6 +10,7 @@ my %prereqs = ('Pod::Parser' => 0,
 	       'File::Spec' => 0,
 	       'LWP' => 0,
 	       'XML::Parser' => 2,
+	       'Getopt::Long' => 2.32,
 	       );
 
 my $home = $ENV{HOME};

@@ -12,10 +12,17 @@ use CPAN;
 use XML::Parser;
 use LWP::Simple qw(getstore is_success);
 require File::Spec;
+use Pod::Html;
 use constant WIN32 => $^O eq 'MSWin32';
 use vars qw($VERSION);
-$VERSION = '0.28';
+$VERSION = '0.38';
 my @path_ext = ();
+
+my %Escape = ('&' => 'amp',
+	      '>' => 'gt',
+	      '<' => 'lt',
+	      '"' => 'quot'
+	     );
 
 my $has_myconfig = 0;
 if ($ENV{HOME}) {
@@ -33,14 +40,51 @@ sub new {
   my ($class, %opts) = @_;
 
   my %legal = 
-    map {$_ => 1} qw(force ignore binary zip install clean
-                     dist script exec os arch arch_sub add);
+    map {$_ => 1} qw(force ignore binary zip install clean program
+                     dist script exec os arch arch_sub add as vs);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_' ... ignoring\n";
   }
+  if (exists $opts{add}) {
+    die "Please supply an ARRAY reference to 'add'"
+      unless ref($opts{add}) eq 'ARRAY';
+  }
+  if (exists $opts{program}) {
+    die "Please supply an HASH reference to 'program'"
+      unless ref($opts{program}) eq 'HASH';
+  }  
   $opts{zip} = 1 if ($opts{binary} and $opts{binary} =~ /\.zip$/);
 
+  if (my $progs = $opts{program}) {
+    my %ok = map {$_ => 1} qw(zip unzip tar gzip make);
+    foreach (keys %{$progs}) {
+      next if $ok{$_};
+      warn "Unknown program option '$_' ... ignoring\n";
+    }
+  }
+
+  $opts{as} = defined $opts{as} ? $opts{as} : 1;
+
+  my $arch;
+  if (defined $opts{arch}) {
+    $arch = ($opts{arch} eq "") ? undef : $opts{arch};
+  }
+  else {
+    $arch = $Config{archname};
+    if ($opts{as}) {
+      if (length($^V) && ord(substr($^V, 1)) >= 8) {
+	$arch .= sprintf("-%d.%d", ord($^V), ord(substr($^V, 1)));
+      }
+    }
+  }
+  my $os;
+  if (defined $opts{os}) {
+    $os = ($opts{os} eq "") ? undef : $opts{os};
+  }
+  else {
+    $os = $Config{osname};
+  }
   my $self = {
 	      opts => \%opts || {},
 	      ext => qr/(\.tar\.gz|\.tar\.Z|\.tgz|\.zip)$/,
@@ -53,47 +97,80 @@ sub new {
 	      ppd => '',
 	      html => 'blib/html',
 	      file => '',
+	      version => '',
+	      ARCHITECTURE => $arch,
+	      OS => $os,
 	     };
   path_ext() if WIN32;
-  $self->{has} = what_have_you();
+  $self->{has} = what_have_you($opts{program}, $arch, $os);
   bless $self, $class;
 }
 
 sub what_have_you {
+  my ($progs, $arch, $os) = @_;
   my %has;
-  eval{require Archive::Tar; require Compress::Zlib};
-  if ($@) {
+  if (defined $progs->{tar} and defined $progs->{gzip}) {
+    $has{tar} = $progs->{tar};
+    $has{gzip} = $progs->{gzip};
+  }
+  elsif ((not WIN32 and 
+	  (not $os or $os =~ /Win32/i or not $arch or $arch =~ /Win32/i))) {
     $has{tar} = 
       $Config{tar} || $CPAN::Config->{tar} || which('tar');
-    $has{gzip} = 
+    $has{gzip} =
       $Config{gzip} || $CPAN::Config->{gzip} || which('gzip');
   }
   else {
-    $has{tar} = 'perl';
-    $has{gzip} = 'perl';
+    eval{require Archive::Tar; require Compress::Zlib};
+    if ($@) {
+      $has{tar} = 
+	$Config{tar} || $CPAN::Config->{tar} || which('tar');
+      $has{gzip} =
+	$Config{gzip} || $CPAN::Config->{gzip} || which('gzip');
+    }
+    else {
+      $has{tar} = 'Archive::Tar';
+      $has{gzip} = 'Compress::Zlib';
+    }
   }
 
-  eval{require Archive::Zip; };
-  if ($@) {
-    $has{zip} = 
-      $Config{zip} || $CPAN::Config->{zip} || which('zip');
-    $has{unzip} = 
-      $Config{unzip} || $CPAN::Config->{unzip} || which('unzip');
+  if (defined $progs->{zip} and defined $progs->{unzip}) {
+    $has{zip} = $progs->{zip};
+    $has{unzip} = $progs->{unzip};
   }
   else {
-    require Archive::Zip; import Archive::Zip qw(:ERROR_CODES);
-    $has{zip} = 'perl';
-    $has{unzip} = 'perl';
+    eval{require Archive::Zip; };
+    if ($@) {
+      $has{zip} = 
+	$Config{zip} || $CPAN::Config->{zip} || which('zip');
+      $has{unzip} =
+	$Config{unzip} || $CPAN::Config->{unzip} || which('unzip');
+    }
+    else {
+      my $zipv = $Archive::Zip::VERSION + 0;
+      if ($zipv >= 1.02) {
+	require Archive::Zip; import Archive::Zip qw(:ERROR_CODES);
+	$has{zip} = 'Archive::Zip';
+	$has{unzip} = 'Archive::Zip';
+      }
+      else {
+	$has{zip} =
+	  $Config{zip} || $CPAN::Config->{zip} || which('zip');
+	$has{unzip} =
+	  $Config{unzip} || $CPAN::Config->{unzip} || which('unzip');
+      }
+    }
   }
-
-  $has{make} = 
+  
+  $has{make} = $progs->{make} ||
     $Config{make} || $CPAN::Config->{make} || which('make');
 
   $has{perl} = 
     $Config{perlpath} || which('perl');
 
-  for (qw(tar gzip make perl)) {
+  foreach (qw(tar gzip make perl)) {
     die "Cannot find a '$_' program" unless $has{$_};
+    print "Using $has{$_} ....\n";
   }
 
   eval{require PPM; };
@@ -128,6 +205,9 @@ sub make_ppm {
   $self->parse_make() unless $ret;
   $self->abstract();
   $self->author();
+  if ($self->{opts}->{vs}) {
+    $self->version_from() or warn "Cannot extract version";
+  }
   $self->make_html() unless (-d 'blib/html' and not $force);
   $dist = $self->make_dist();
   $self->fix_ppd($dist);
@@ -191,7 +271,7 @@ sub extract_dist {
   my ($name, $path, $suffix) = fileparse($file, $self->{ext});
  EXTRACT: {
     if ($suffix eq '.zip') {
-      ($unzip eq 'perl') && do {
+      ($unzip eq 'Archive::Zip') && do {
 	my $arc = Archive::Zip->new();
 	die "Read of $file failed" unless $arc->read($file) == AZ_OK();
 	$arc->extractTree();
@@ -206,7 +286,7 @@ sub extract_dist {
 
     }
     else {
-      ($tar eq 'perl') && do {
+      ($tar eq 'Archive::Tar') && do {
 	my $arc = Archive::Tar->new($file, 1);
 	$arc->extract($arc->list_files);
 	last EXTRACT;
@@ -227,7 +307,8 @@ sub adjust_binary {
   my $self = shift;
   my $binary = $self->{opts}->{binary};
   my $ext = $self->{ext};
-  my $archname = $self->{opts}->{arch} || $Config{archname};
+  my $archname = $self->{ARCHITECTURE};
+  return unless $archname;
   if ($binary) {
     if ($binary =~ m!$ext!) {
       if ($binary =~ m!/!) {
@@ -391,8 +472,13 @@ sub guess_abstract {
     my $result = parse_abstract($args->{NAME}, $version_from);
     return $result if $result;
   }
-  my $hit;
-  (my $guess = $args->{NAME}) =~ s!.*::(.*)!$1.pm!;
+  my ($hit, $guess);
+  if ($args->{NAME} =~ /-|:/) {
+    ($guess = $args->{NAME}) =~ s!.*[-:](.*)!$1.pm!;
+  }
+  else {
+    $guess = $args->{NAME} . '.pm';
+  }
   finddepth(sub{$_ eq $guess && ($hit = $File::Find::name) 
 		  && ($hit !~ m!blib/!)}, $cwd);
   return unless (-f $hit);
@@ -405,6 +491,7 @@ sub parse_abstract {
   my ($package, $file) = @_;
   my $basename = basename($file, qr/\.\w+$/);
   (my $stripped = $basename) =~ s!\.\w+$!!;
+  (my $trans = $package) =~ s!-!::!g;
   my $result;
   my $inpod = 0;
   open(FILE, $file) or die "Couldn't open $file: $!";
@@ -412,10 +499,12 @@ sub parse_abstract {
     $inpod = /^=(?!cut)/ ? 1 : /^=cut/ ? 0 : $inpod;
     next if !$inpod;
     chop;
-    next unless /^\s*($package|$basename|$stripped)\s--*\s(.*)/;
+    next unless /^\s*($package|$basename|$stripped|$trans)\s+--*\s+(.*)/;
     $result = $2;
     last;
   }
+  close(FILE);
+  chomp($result);
   return $result;
 }
 
@@ -436,11 +525,52 @@ sub author {
   }
 }
 
+sub version_from {
+  my $self = shift;
+  my $parsefile = $self->{args}->{VERSION_FROM};
+  my $result;
+  local *FH;
+  local $/ = "\n";
+  unless (open(FH,$parsefile)) {
+    warn "Could not open '$parsefile': $!";
+    return;
+  }
+  my $inpod = 0;
+  while (<FH>) {
+    $inpod = /^=(?!cut)/ ? 1 : /^=cut/ ? 0 : $inpod;
+    next if $inpod;
+    chop;
+    # next unless /\$(([\w\:\']*)\bVERSION)\b.*\=/;
+    next unless /([\$*])(([\w\:\']*)\bVERSION)\b.*\=/;
+    my $eval = qq{
+	    package ExtUtils::MakeMaker::_version;
+	    no strict;
+
+	    local $1$2;
+	    \$$2=undef; do {
+		$_
+	    }; \$$2
+	};
+    no warnings;
+    $result = eval($eval);
+    if ($@) {
+      warn "Could not eval '$eval' in $parsefile: $@";
+      return;
+    }
+    return undef unless defined $result;
+    last;
+  }
+  close FH;
+  $self->{version} = $result;
+  return $result;
+}
+
 sub guess_author {
   my $self = shift;
   my $args = $self->{args};
+  (my $mod = $args->{NAME}) =~ s!-!::!g;
   print "Trying to get AUTHOR from CPAN.pm ...\n";
-  my $module = CPAN::Shell->expand('Module', $args->{NAME});
+  my $module = CPAN::Shell->expand('Module', $mod);
   unless ($module) {
     if (my $version_from = $args->{VERSION_FROM}) {
       $version_from =~ s!^lib/!!;
@@ -474,19 +604,17 @@ sub make_html {
 		    if (-f $_ and not /\.bat$/ and contains_pod($_));
 	      }, "$cwd/blib/script");
   }
-  
-  eval {require Pod::Tree};
-  my $has_pod_tree = 1 unless $@;
 
   foreach my $pod (keys %pods){
     my @dirs = split /::/, $pods{$pod};
-    my $isbin = ((shift @dirs) eq 'script');
+    my $isbin = shift @dirs eq 'script';
 
     (my $infile = File::Spec->abs2rel($pod)) =~ s!^\w+:!!;
     $infile =~ s!\\!/!g;
     my $outfile = (pop @dirs) . '.html';
 
     my @rootdirs  = $isbin? ('bin') : ('site', 'lib');
+    (my $path2root = "../" x (@rootdirs+@dirs)) =~ s|/$||;
     
     (my $fulldir = File::Spec->catfile($html, @rootdirs, @dirs)) =~ s!\\!/!g;
     unless (-d $fulldir){
@@ -495,25 +623,24 @@ sub make_html {
     }
     ($outfile = File::Spec->catfile($fulldir, $outfile)) =~ s!\\!/!g;
     
-    my @args = ('pod2html');
-    if (not $has_pod_tree and $pods{$pod}) {
-      push @args, qq{--title="$pods{$pod}"};
-    }
-        
-    if ($self->{has}->{ppm}) {
-      my $csslink = '../' x (@rootdirs+@dirs);
-      push @args, "--css=${csslink}Active.css";
-    }
-    
-    unless ($has_pod_tree) {
-      $infile = "--infile=$infile ";
-      $outfile = "--outfile=$outfile ";
-    }
-
-    push @args, $infile, $outfile;
-    
-    print "@args\n";
-    system(@args) == 0 or warn "@args failed: $?";
+    my $htmlroot = "$path2root/site/lib";
+    my $podroot = "$cwd/blib";
+    my $podpath = join ":" => map { $podroot . '/' . $_ }  
+      ($isbin ? qw(bin lib) : qw(lib));
+    (my $package = $pods{$pod}) =~ s!^(lib|script)::!!;
+    my $abstract = parse_abstract($package, $infile);
+    my $title =  $abstract ? "$package - $abstract" : $package;
+    my @opts = (
+		'--header',
+		"--title=$title",
+		"--infile=$infile",
+		"--outfile=$outfile",
+		"--podroot=$podroot",
+		"--htmlroot=$htmlroot",
+		"--css=$path2root/Active.css",
+	       );
+    print "pod2html @opts\n";
+    pod2html(@opts);# or warn "pod2html @opts failed: $!";
   }
   ###################################
 }
@@ -536,6 +663,12 @@ sub make_dist {
     $name  =~ s!::!-!g;
   }
 
+  $name .= "-$self->{version}" if $self->{version};
+
+  my $is_Win32 = (not $self->{OS} or $self->{OS} =~ /Win32/i 
+		  or not $self->{ARCHITECTURE} or
+		  $self->{ARCHITECTURE} =~ /Win32/i);
+
   my $script = $self->{opts}->{script};
   my @files;
   if ($self->{opts}->{add}) {
@@ -543,18 +676,25 @@ sub make_dist {
   }
 
   my $arc = $force_zip ? ($name . '.zip') : ($name . '.tar.gz');
-  unless ($self->{opts}->{force}) {
-    return $arc if (-f $arc);
-  }
+#  unless ($self->{opts}->{force}) {
+#    return $arc if (-f $arc);
+#  }
   unlink $arc if (-e $arc);
 
  DIST: {
-    ($tar eq 'perl' and not $force_zip) && do {
+    ($tar eq 'Archive::Tar' and not $force_zip) && do {
       $name .= '.tar.gz';
       my @f;
       my $arc = Archive::Tar->new();
-      finddepth(sub {push @f, $File::Find::name; 
-		     print $File::Find::name,"\n"}, 'blib');
+      if ($is_Win32) {
+	finddepth(sub {next if $File::Find::name =~ m!blib/man\d!; 
+		       push @f, $File::Find::name; 
+		       print $File::Find::name,"\n"}, 'blib');
+      }
+      else {
+	finddepth(sub {push @f, $File::Find::name; 
+		       print $File::Find::name,"\n"}, 'blib');
+      }
       if ($script) {
 	push @f, $script;
 	print "$script\n";
@@ -569,14 +709,24 @@ sub make_dist {
     };
     ($tar and $gzip and not $force_zip) && do {
       $name .= '.tar';
-      my @args = ($tar, 'cvf', $name, 'blib');
+      my @args = ($tar, 'cvf', $name);
+
+      if ($is_Win32) {
+	my @f;
+	finddepth(sub {next unless $File::Find::name =~ m!blib/man\d!; 
+		       push @f, $File::Find::name;}, 'blib');
+	for (@f) {
+	  push @args, "--exclude", $_;
+	}
+      }
+
+      push @args, 'blib';
+
       if ($script) {
 	push @args, $script;
-	print "$script\n";
       }
       if (@files) {
 	push @args, @files;
-	print join "\n", @files;
       }
       print "@args\n";
       system(@args) == 0 or die "@args failed: $?";
@@ -586,10 +736,17 @@ sub make_dist {
       $name .= '.gz';
       last DIST;
     };
-    ($zip eq 'perl') && do {
+    ($zip eq 'Archive::Zip') && do {
       $name .= '.zip';
       my $arc = Archive::Zip->new();
-      $arc->addTree('blib', 'blib', sub{print "$_\n";});
+      if ($is_Win32) {
+	$arc->addTree('blib', 'blib',
+		      sub{not m!blib/man\d/!; print "$_\n";});
+      }
+      else {
+	$arc->addTree('blib', 'blib', 
+		      sub{print "$_\n";});
+      }
       if ($script) {
 	$arc->addTree($script, $script);
 	print "$script\n";
@@ -615,6 +772,16 @@ sub make_dist {
 	push @args, @files;
 	print join "\n", @files;
       }
+      if ($is_Win32) {
+	my @f;
+	finddepth(sub {next unless $File::Find::name =~ m!blib/man\d!;
+		       push @f, $File::Find::name;}, 'blib');
+	for (@f) {
+	  push @args, "-x", $_;
+	}
+      }
+      
+      print "@args\n";
       system(@args) == 0 or die "@args failed: $?";
       last DIST;
     };
@@ -637,12 +804,16 @@ sub fix_ppd {
   my $binary = $self->{opts}->{binary};
   my $ext = $self->{ext};
   my $edit_binary = ($binary and $binary =~ m!\.(tar\.gz|zip)$!) ? 0 : 1;
-  my $os = $self->{opts}->{os};
-  my $arch = $self->{opts}->{arch};
-
+  my $os = $self->{OS};
+  my $arch = $self->{ARCHITECTURE};
 
   my $name = $args->{DISTNAME} ? $args->{DISTNAME} : $args->{NAME};
   $name  =~ s!::!-!g;
+  if (my $v = $self->{version}) {
+    rename("$name.ppd", "$name-$v.ppd") 
+      or die "Couldn't rename $name.ppd to $name-$v.ppd: $!";
+    $name .= "-$v";
+  }
   my $ppd = $name . '.ppd';  
   my $copy = $ppd . '.in';
   rename($ppd, $copy) or die "Couldn't rename $ppd to $copy: $!";
@@ -670,14 +841,17 @@ sub fix_ppd {
     $d->{INSTALL}->{EXEC} = $exec;
   }
 
-  print_ppd($d, $ppd);
+  $self->print_ppd($d, $ppd);
   $self->{ppd} = $ppd;
   unlink $copy or warn "Couldn't unlink $copy: $!";
 }
 
 sub ppm_install {
   my $self = shift;
-  PPM::InstallPackage(package => $self->{ppd});
+#  PPM::InstallPackage(package => $self->{ppd});
+  my @args = ('ppm', 'install', $self->{ppd});
+  print "@args\n";
+  system(@args) == 0 or warn "Can't install $self->{ppd}: $?";
   return unless $self->{opts}->{clean};
   my $file = $self->{file};
   unless ($file) {
@@ -689,6 +863,12 @@ sub ppm_install {
   rmtree($self->{cwd}) or warn "Cannot remove $self->{cwd}: $!";
   print "About to remove $file ....\n";
   unlink $file or warn "Cannot unlink $file: $!";
+}
+
+sub escape {
+  my $text = shift;
+  $text =~ s/([<>\"&])/\&$Escape{$1};/mg;
+  $text;
 }
 
 sub parse_ppd {
@@ -707,13 +887,16 @@ sub parse_ppd {
 }
 
 sub print_ppd {
-  my ($d, $fn) = @_;
+  my ($self, $d, $fn) = @_;
   my $fh = new IO::File ">$fn" or die "Couldn't write to $fn: $!";
+  my $title = escape($d->{TITLE});
+  my $abstract = escape($d->{ABSTRACT});
+  my $author = escape($d->{AUTHOR});
   print $fh <<"END";
 <SOFTPKG NAME=\"$d->{SOFTPKG}->{NAME}\" VERSION=\"$d->{SOFTPKG}->{VERSION}\">
-\t<TITLE>$d->{TITLE}</TITLE>
-\t<ABSTRACT>$d->{ABSTRACT}</ABSTRACT>
-\t<AUTHOR>$d->{AUTHOR}</AUTHOR>
+\t<TITLE>$title</TITLE>
+\t<ABSTRACT>$abstract</ABSTRACT>
+\t<AUTHOR>$author</AUTHOR>
 \t<IMPLEMENTATION>
 END
 
@@ -724,7 +907,7 @@ END
     
   }
   foreach (qw(OS ARCHITECTURE)) {
-    print $fh qq{\t\t<$_ NAME="$d->{$_}->{NAME}" />\n}
+    print $fh qq{\t\t<$_ NAME="$d->{$_}->{NAME}" />\n} if $self->{$_};
   }
   
   if ($d->{INSTALL}->{SCRIPT}) {
@@ -956,13 +1139,17 @@ issue a warning.
 
 =item os => value
 
-If specified, this value will be used instead of the default
-for the I<NAME> attribute of the I<OS> field of the ppd file.
+If this option specified, the value, if present, will be used instead 
+of the default for the I<NAME> attribute of the I<OS> field of the ppd 
+file. If a value of an empty string is given, the I<OS> field will not 
+be included in the  ppd file.
 
 =item arch => value
 
-If specified, this value will be used instead of the default
-for the I<NAME> attribute of the I<ARCHITECTURE> field of the ppd file.
+If this option is specified, the value, if present, will be used instead 
+of the default for the I<NAME> attribute of the I<ARCHITECTURE> field of 
+the ppd file. If a value of an empty string is given, the 
+I<ARCHITECTURE> field will not be included in the ppd file.
 
 =item install => boolean
 
@@ -973,6 +1160,26 @@ the module.
 
 If specified, the directory used to build the ppm distribution
 (with the I<dist> option) will be removed after a successful install.
+
+=item program => { p1 => '/path/to/q1', p2 => '/path/to/q2', ...}
+
+This option specifies that C</path/to/q1> should be used
+for program C<p1>, etc., rather than the ones PPM::Make finds. The
+programs specified can be one of C<tar>, C<gzip>, C<zip>, C<unzip>,
+or C<make>.
+
+=item as => boolean
+
+Beginning with Perl-5.8, Activestate adds the Perl version number to
+the NAME of the ARCHITECTURE tag in the ppd file. This option,
+which is true by default, will make a ppd file compatible with this
+practice.
+
+=item vs => boolean
+
+This option, if enabled, will add a version string 
+(based on the VERSION reported in the ppd file) to the 
+ppd and archive filenames.
 
 =back
 

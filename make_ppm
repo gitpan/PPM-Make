@@ -2,10 +2,11 @@
 
 use strict;
 # use warnings;
+use Getopt::Long qw(:config no_ignore_case);
 use PPM::Make;
-use Getopt::Long;
 my %opts = ();
 my @files = ();
+my %progs = ();
 my $result = GetOptions(\%opts, 
 			'l|install',
 			'z|zip',
@@ -15,12 +16,16 @@ my $result = GetOptions(\%opts,
                         'n|arch_sub',
 			's|script=s',
 			'e|exec=s',
-			'o|os=s',
-			'a|arch=s',
+			'o|os:s',
+			'a|arch:s',
 			'v|version',
 			'h|help',
 			'r|remove',
+			'h|html',
+			'A|as!',
+			'V|vs',
 			'x|add=s' => \@files,
+			'p|program=s' => \%progs,
 		       );
 if ($opts{v}) {
   print <<"END";
@@ -56,6 +61,9 @@ Options:
  [-h | --help]             : print this help screen
  [-l | --install]          : install the package after building
  [-r | --remove]           : remove the build directory after installation
+ [-p | --program]  b=a     : specify "a" to be used for the "b" program
+ [-A | --as]               : add Perl version number to ARCHITECTURE (>= 5.8)
+ [-V | --ppmv]             : add version string to ppd and archive filenames
 
 Additional Arguments:
    Module       : specify a module to fetch (requires CPAN.pm)
@@ -71,11 +79,13 @@ END
 my $dist = shift;
 my $ppm = PPM::Make->new(zip => $opts{z}, force => $opts{f},
                          ignore => $opts{i}, binary => $opts{b},
-                         dist => $dist, script => $opts{s},
+                         dist => $dist, script => $opts{'s'},
 			 exec => $opts{e}, os => $opts{o},
-                         arch => $opts{a}, arch_sub => $opts{n},
+			 arch => $opts{a}, arch_sub => $opts{n},
 			 install => $opts{l}, clean => $opts{r},
-			 add => \@files);
+			 add => \@files, program => \%progs,
+			 as => $opts{A}, vs => $opts{V},
+			);
 $ppm->make_ppm();
 
 __END__
@@ -151,13 +161,17 @@ I<CODEBASE> field in the ppd file.
 
 =item  [-o | --os] os
 
-If specified, this value will be used instead of the default
-for the I<NAME> attribute of the I<OS> field of the ppd file.
+If this option is specified, the value, if present, will be used 
+instead of the default for the I<NAME> attribute of the I<OS> field 
+of the ppd file. If no value is supplied, the I<OS> field will not 
+be included in the ppd file.
 
 =item [-a | --arch] arch
 
-If specified, this value will be used instead of the default
-for the I<NAME> attribute of the I<ARCHITECTURE> field of the ppd file.
+If this option is specified, the value, if present, will be used instead 
+of the default for the I<NAME> attribute of the I<ARCHITECTURE> field of 
+the ppd file. If no value is specified, the  I<ARCHITECTURE> field 
+will not be included in the ppd file.
 
 =item  [-s | --script] script
 
@@ -188,6 +202,25 @@ the module.
 
 If specified, the directory used to build the ppm distribution
 given on the command line will be removed after a successful install.
+
+=item [-p | --prog] program=/path/to/program
+
+This option specifies that C</path/to/program> should be used
+for C<program>, rather than the one PPM::Make finds. This option
+can be specified multiple times, with
+C<program> being one of C<tar>, C<gzip>, C<zip>, C<unzip>, or C<make>.
+
+=item [-A | --as]
+
+Beginning with Perl-5.8, Activestate adds the Perl version number to
+the NAME of the ARCHITECTURE tag in the ppd file. This option,
+which is enabled by default, will make a ppd file compatible with this
+practice. Specify C<--noas> to disable this option.
+
+=item [-V | --vs]
+
+This option will add a version string (based on the VERSION reported
+in the ppd file) to the ppd and archive filenames.
 
 =item [-h | --help]
 

@@ -47,17 +47,30 @@ ok($d->{TITLE}, $name);
 ok($d->{ABSTRACT}, $abstract);
 ok($d->{AUTHOR}, $author);
 ok($d->{OS}->{NAME}, $Config{osname});
-ok($d->{ARCHITECTURE}->{NAME}, $Config{archname});
+my $arch = $Config{archname};
+if (length($^V) && ord(substr($^V, 1)) >= 8) {
+   $arch .= sprintf("-%d.%d", ord($^V), ord(substr($^V, 1)));
+}
+ok($d->{ARCHITECTURE}->{NAME}, $arch);
 ok($d->{CODEBASE}->{HREF}, $tgz); 
 
+my $is_Win32 = ($d->{OS}->{NAME} =~ /Win32/i); 
+
 my @f;
-finddepth(sub {push @f, $File::Find::name; 
-	       print $File::Find::name,"\n"}, 'blib');
+if ($is_Win32) {
+  finddepth(sub {next if $File::Find::name =~ m!blib/man\d!; 
+		 push @f, $File::Find::name; 
+		 print $File::Find::name,"\n"}, 'blib');
+}
+else {
+  finddepth(sub {push @f, $File::Find::name; 
+		print $File::Find::name,"\n"}, 'blib');
+}
 
 my $tar = $ppm->{has}->{tar};
 my $gzip = $ppm->{has}->{gzip};
 my @files;
-if ($tar eq 'perl') {
+if ($tar eq 'Archive::Tar' and $gzip eq 'Compress::Zlib') {
    require Archive::Tar;
    require Compress::Zlib;
    my $tar = Archive::Tar->new($tgz, 1);
@@ -73,6 +86,7 @@ else {
   }
   close(TGZ) or die "$!\n";;
 }
+
 ok($#f, $#files);
 unlink ($ppd, $tgz);
 my $os = 'homer-simpson';
@@ -114,7 +128,7 @@ ok($d->{INSTALL}->{EXEC}, $exec);
 finddepth(sub {push @f, $File::Find::name; 
 	       print $File::Find::name,"\n"}, 'blib');
 
-if ($tar eq 'perl') {
+if ($tar eq 'Archive::Tar' and $gzip eq 'Compress::Zlib') {
    require Archive::Tar;
    require Compress::Zlib;
    my $tar = Archive::Tar->new($tgz, 1);

@@ -27,11 +27,16 @@ directory, or else put
 at the top of your script.
 
 A Win32 ppm package, suitable for use with ActivePerl
-compatible Perl packages (builds 6xx) is available at
-   http://theoryx5.uwinnipeg.ca/ppmpackages/
-To install, within the ppm shell set the repository to
-  http://theoryx5.uwinnipeg.ca/cgi-bin/ppmserver?urn:/PPMServer
-and then
- ppm> install PPM-Make
+compatible Perl packages is available at
+    http://theoryx5.uwinnipeg.ca/ppmpackages/
+for ActivePerl 6xx and at
+      http://theoryx5.uwinnipeg.ca/ppms/
+for ActivePerl 8xx. To install, within the ppm shell set the 
+repository to
+      http://theoryx5.uwinnipeg.ca/cgi-bin/ppmserver?urn:/PPMServer
+for ActivePerl 6xx and to
+      http://theoryx5.uwinnipeg.ca/cgi-bin/ppmserver?urn:/PPMServer58
+for ActivePerl 8xx, and then
+      ppm> install PPM-Make
 
 Randy Kobes <randy@theoryx5.uwinnipeg.ca>
