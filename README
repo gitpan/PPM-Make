@@ -1,0 +1,46 @@
+NAME
+    PPM::Make - Make a ppm package from a CPAN distribution
+
+SYNOPSIS
+      my $ppm = PPM::Make->new( [options] );
+      $ppm->make_ppm();
+
+DESCRIPTION
+    See the supplied "make_ppm" script for a command-line interface.
+
+    This module automates somewhat some of the steps needed to make a ppm
+    (Perl Package Manager) package from a CPAN distribution. It attempts to
+    fill in the ABSTRACT and AUTHOR attributes of Makefile.PL, if these
+    are not supplied, and also uses pod2html to generate a set of html
+    documentation. It also adjusts CODEBASE of package.ppd to reflect
+    the generated package.tar.gz or package.zip archive, and can add
+    a post-install script via the <INSTALL> field to the ppd file. 
+    Such packages are suitable both for local installation via
+
+      C:\.cpan\build\package_src> ppm install
+
+    and for distribution via a repository.
+
+    The module may be used either within a locally installed
+    source distribution or else it can fetch and build remote
+    distributions.
+
+REQUIREMENTS
+    As well as the needed software for unpacking and making .tar.gz and
+    .zip archives, and a make program, it is assumed in this that
+    CPAN.pm is available and already configured.
+
+PPM PACKAGE
+    A Win32 ppm package, suitable for use with ActivePerl
+    compatible Perl packages (builds 6xx) is available at
+      http://theoryx5.uwinnipeg.ca/ppmpackages/
+    To install, within the ppm shell set the repository to
+      http://theoryx5.uwinnipeg.ca/cgi-bin/ppmserver?urn:/PPMServer
+    and then
+      ppm> install PPM-Make
+
+COPYRIGHT
+    This program is copyright, 2002, by Randy Kobes
+    <randy@theoryx5.uwinnipeg.ca>. It is distributed under the
+    same terms as Perl itself.
+

@@ -1,0 +1,182 @@
+#!/usr/bin/perl
+
+use strict;
+# use warnings;
+use PPM::Make;
+use Getopt::Std;
+my %opts = ();
+getopts('hvzfinb:s:e:o:a:', \%opts);
+if ($opts{v}) {
+  print <<"END";
+
+This is make_ppm, running PPM::Make version $PPM::Make::VERSION.
+
+Copyright 2002, Randy Kobes <randy\@theoryx5.uwinnipeg.ca>.
+This program is distributed under the same terms as Perl itself.
+
+END
+  exit;
+}
+
+foreach (qw(b s o e a)) {
+    if (exists $opts{$_} and not defined $opts{$_} ) {
+	print <<"END";
+No value set for option '$_'.
+See '$0 -h' for help.
+END
+    die;
+}
+}
+
+if ($opts{h}) {
+  print <<"END";
+
+Usage: $0 [options] [Module | Distribution]
+
+Options:
+   -z           : make a zip distribution
+   -f           : force remaking a distribution
+   -i           : ignore any failing test results
+   -b location  : specify the binary location
+   -n           : use \$Config{archname} as a subdirectory
+   -s script    : specify a script in the <INSTALL> field
+   -e exec      : specify the executable to run the <INSTALL> script
+   -o os        : use os for the <OS> field
+   -a arch      : use arch for the <ARCHITECTURE> field
+   -v           : print version information and exit
+   -h           : print this help screen
+
+Additional Arguments:
+   Module       : specify a module to fetch (requires CPAN.pm)
+   Distribtion  : specify a distribution to fetch
+
+With no arguments, make_ppm will build a distribution
+inside the current directory. See 'perldoc make_ppm'.
+
+END
+  exit;
+}
+
+my $dist = shift;
+my $ppm = PPM::Make->new(zip => $opts{z}, force => $opts{f},
+                         ignore => $opts{i}, binary => $opts{b},
+                         dist => $dist, script => $opts{s},
+			 exec => $opts{e}, os => $opts{o},
+			 arch => $opts{a}, arch_sub => $opts{n});
+$ppm->make_ppm();
+
+__END__
+
+=head1 NAME
+
+make_ppm - script to make a PPM distribution
+
+=head1 SYNOPSIS
+
+   make_ppm [options] [Module | Distribution]
+
+   # make a PPM from within an already unpacked source distribution
+   C:\.cpan\build\package_src> make_ppm 
+
+   # fetch from CPAN a module distribution and build a PPM
+   C:\.cpan\build> make_ppm Net::FTP
+
+   # fetch a distribution and build a PPM
+   C:\.cpan\build> make_ppm ftp://wherever.com/package.tar.gz
+
+=head1 DESCRIPTION
+
+C<make_ppm> is an interface to the C<PPM::Make> module,
+and is used to build a PPM (Perl Package Manager) distribution
+from a CPAN source distribution. See L<PPM::Make> for a
+discussion.
+
+Apart from the options described below, without any arguments 
+C<make_ppm> will assume it is inside an unpacked source
+distribution and make the corresponding PPM distribution.
+If it is given an argument of what looks like a module
+name (eg, I<Net::FTP>), it will use C<CPAN.pm> to look up the 
+corresponding distribution and fetch and build it. Otherwise, 
+additional arguments (eg, F<package.tar.gz>, or
+I<http://someplace.org/package.tar.gz>) will be interpreted
+as distributions to fetch and build.
+
+Available options include:
+
+=over
+
+=item -z
+
+By default, C<make_ppm> will build a C<.tar.gz> distribution
+if possible. This option forces a C<.zip> distribution to be made.
+
+=item -f
+
+By default, if C<make_ppm> detects a F<blib/> directory,
+it will assume the distribution has already been made, and
+will not remake it. This option forces remaking the distribution.
+
+=item -i
+
+By default, C<make_ppm>, if it is building the distribution,
+will die if all tests do not pass. Turning on this option
+instructs C<make_ppm> to ignore any test failures.
+
+=item -b location
+
+I<location> is used as the value for the C<BINARY_LOCATION>
+attribute passed to C<perl Makefile.PL>, and is used in
+setting the I<HREF> attribute of the I<CODEBASE> field
+in the ppd file.
+
+=item -n
+
+This option will insert the value of C<$Config{archname}>
+(or the value of the I<-a> option, if given)
+as a relative subdirectory in the I<HREF> attribute of the 
+I<CODEBASE> field in the ppd file.
+
+=item -o os
+
+If specified, this value will be used instead of the default
+for the I<NAME> attribute of the I<OS> field of the ppd file.
+
+=item -a arch
+
+If specified, this value will be used instead of the default
+for the I<NAME> attribute of the I<ARCHITECTURE> field of the ppd file.
+
+=item -s script
+
+This will be used in the I<PPM_INSTALL_SCRIPT>
+attribute passed to C<perl Makefile.PL>, and arises in
+setting the value of the I<INSTALL> field in the ppd file.
+
+=item -e exec
+
+This will be used in the I<PPM_INSTALL_EXEC>
+attribute passed to C<perl Makefile.PL>, and arises in
+setting the I<EXEC> attribute of the I<INSTALL> field
+in the ppd file. This defaults to C<perl> when a value
+of I<script> is specified.
+
+=item -h
+
+This prints out a short help screen and exits.
+
+=item -v
+
+This prints out some version information and exits.
+
+=back
+
+=head1 COPYRIGHT
+
+This program is copyright, 2002, by Randy Kobes <randy@theoryx5.uwinnipeg.ca>.
+It is distributed under the same terms as Perl itself.
+
+=head1 SEE ALSO
+
+L<PPM::Make>, and L<PPM>.
+
+=cut

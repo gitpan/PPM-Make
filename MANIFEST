@@ -1,0 +1,9 @@
+Changes
+Make.pm
+Makefile.PL
+MANIFEST
+MANIFEST.SKIP
+README
+INSTALL
+make_ppm
+t/test.t

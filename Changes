@@ -1,0 +1,21 @@
+Revision history for Perl extension PPM::Make.
+
+0.25 Thu Sep  5 09:42:48 2002
+
+  - use XML::Parser to parse ppd file
+  - adjusted so as to not remake html unless forced
+
+0.2  Thu Aug 29 11:05:00 2002
+
+  - search for MyConfig.pm in $HOME (suggested by Slaven Rezik)
+  - configurable OS and ARCHITECTURE (suggested by Slaven Rezik)
+  - add script to archive
+  - fixed typo in binary/location
+  - added semi-realistic test
+  - added A::T/C::Z and A::Z to list of prerequisites
+  - added option to insert an architecture-dependent subdirectory
+
+0.1  Sun Jul 14 20:05:00 2002
+  - original version; created by h2xs 1.21 with options
+         -X -n PPM::Make
+
