@@ -19,7 +19,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.68';
+$VERSION = '0.69';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -68,7 +68,7 @@ sub check_opts {
   my %legal = 
     map {$_ => 1} qw(force ignore binary zip remove program cpan
                      dist script exec os arch arch_sub add no_as vs upload
-                     no_case no_cfg vsr vsp);
+                     no_case no_cfg vsr vsp zipdist);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_'\n";
@@ -228,7 +228,8 @@ sub merge_opts {
 sub make_ppm {
   my $self = shift;
   die 'No software available to make a zip archive'
-     if ($self->{opts}->{zip} and not $self->{has}->{zip});
+     if ( ($self->{opts}->{zip} or $self->{opts}->{zipdist})
+         and not $self->{has}->{zip});
   my $dist = $self->{opts}->{dist};
   if ($dist) {
     my $build_dir = $PPM::Make::Util::build_dir;
@@ -279,6 +280,7 @@ sub make_ppm {
 #    $self->ppm_install();
 #  }
   $self->make_cpan() if $self->{opts}->{cpan};
+  $self->make_zipdist($dist) if $self->{opts}->{zipdist};
   if (defined $self->{opts}->{upload}) {
     die 'Please specify the location to place the ppd file'
       unless $self->{opts}->{upload}->{ppd}; 
@@ -325,7 +327,7 @@ sub extract_dist {
     if ($suffix eq '.zip') {
       ($unzip eq 'Archive::Zip') && do {
 	my $arc = Archive::Zip->new();
-        die "Read of $file failed" unless $arc->read($file) == AZ_OK();
+        die "Read of $file failed" unless $arc->read($file) == Archive::Zip::AZ_OK();
 	$arc->extractTree();
 	last EXTRACT;
       };
@@ -880,25 +882,25 @@ sub make_dist {
       my $arc = Archive::Zip->new();
       if ($is_Win32) {
         die "zip of blib failed" unless $arc->addTree('blib', 'blib',
-                     sub{$_ !~ m!blib/man\d/! && print "$_\n";}) == AZ_OK();
+                     sub{$_ !~ m!blib/man\d/! && print "$_\n";}) == Archive::Zip::AZ_OK();
       }
       else {
         die "zip of blib failed" unless $arc->addTree('blib', 'blib', 
-                              sub{print "$_\n";}) == AZ_OK();
+                              sub{print "$_\n";}) == Archive::Zip::AZ_OK();
       }
       if ($script and not $script_is_external) {
         die "zip of $script failed"
-           unless $arc->addTree($script, $script) == AZ_OK();
+           unless $arc->addFile($script, $script);
 	print "$script\n";
       }
       if (@files) {
 	for (@files) {
-          die "zip of $_ failed" unless $arc->addTree($_, $_) == AZ_OK();
+          die "zip of $_ failed" unless $arc->addFile($_, $_);
 	  print "$_\n";
 	}
       }
       die "Writing to $name failed" 
-	unless $arc->writeToFileNamed($name) == AZ_OK();
+        unless $arc->writeToFileNamed($name) == Archive::Zip::AZ_OK();
       last DIST;
     };
     ($zip) && do {
@@ -994,12 +996,12 @@ sub make_ppd {
     delete $d->{$_}->{NAME} unless $self->{$_};
   }
   
-  print_ppd($d, $ppd);
+  $self->print_ppd($d, $ppd);
   $self->{ppd} = $ppd;
 }
 
 sub print_ppd {
-  my ($d, $fn) = @_;
+  my ($self, $d, $fn) = @_;
   open (my $fh, ">$fn") or die "Couldn't write to $fn: $!";
   my $title = html_escape($d->{TITLE});
   my $abstract = html_escape($d->{ABSTRACT});
@@ -1036,7 +1038,62 @@ END
   
   print $fh qq{\t</IMPLEMENTATION>\n</SOFTPKG>\n};
   $fh->close;
+  $self->{codebase} = $d->{CODEBASE}->{HREF};
+}
 
+sub make_zipdist {
+  my ($self, $dist) = @_;
+  my $ppd = $self->{ppd};
+  (my $zipdist = $ppd) =~ s!\.ppd$!.zip!;
+  my $cb = $self->{codebase};
+  my ($path, $arc);
+  if ($cb =~ m!/!) {
+    ($path, $arc) = $cb =~ m!(.*)/(.*)!;
+  }
+  else {
+    $arc = $cb;
+  }
+  my $readme = 'README.ppm';
+  open(my $fh, '>', $readme) or die "Cannot open $readme: $!";
+  print $fh <<"END";
+To install this ppm package, run the following command
+in the current directory:
+
+   ppm install $ppd
+
+END
+  close $fh;
+
+  my $zip = $self->{has}->{zip};
+  if ($zip eq 'Archive::Zip') {
+    my %contents = ($ppd => $ppd,
+                    $arc => $cb,
+                    $readme => 'README');
+    my $arc = Archive::Zip->new();
+    foreach (keys %contents) {
+      print "Adding $_ as $contents{$_}\n";
+      unless ($arc->addFile($_, $contents{$_})) {
+        die "Failed to add $_";
+      }
+    }
+    die "Writing to $zipdist failed" 
+      unless $arc->writeToFileNamed($zipdist) == Archive::Zip::AZ_OK();
+  }
+  else {
+    if ($path and $path !~ m!(http|ftp)://!) {
+      unless (-d $path) {
+        mkpath($path, 1, 0777) or die "Cannot mkpath $path: $!";
+      }
+      copy($arc, "$path/$arc") or die "Cannot cp $arc to $path: $!";
+    }
+    my @args = ($zip, $zipdist, $ppd, $cb, $readme);
+    print "@args\n";
+    system(@args) == 0 or die "@args failed: $?";
+    if (-d $path) {
+      rmtree($path, 1, 1) or warn "Cannot rmtree $path: $!";
+    }
+  }
+  unlink $readme;
 }
 
 sub make_cpan {
@@ -1270,6 +1327,13 @@ I<ARCHITECTURE> field will not be included in the ppd file.
 
 If specified, the directory used to build the ppm distribution
 (with the I<dist> option) will be removed after a successful install.
+
+=item zipdist => boolean
+
+If enabled, this option will create a zip file C<archive.zip>
+consisting of the C<archive.ppd> ppd file and the C<archive.tar.gz>
+archive file, suitable for local installations. A short README
+file giving the command for installation is also included.
 
 =item cpan => boolean
 

@@ -1,6 +1,11 @@
 Revision history for Perl extension PPM::Make.
 
-0.68 Sun Jan 11 23:00:00 2003
+0.69 Mon Mar 22 23:00:00 2004
+  - use Archive::Zip::AZ_OK(), rather than AZ_OK().
+  - add zipdist option to make a .zip file consisting
+    of the .ppd and the .tar.gz files.
+
+0.68 Sun Jan 11 23:00:00 2004
   - require Archive::Tar >= 1.08 for Win32 to fix A::T bug
   - add --vsp and --vsr flags to add version string to
     ppd and archive files

@@ -27,6 +27,7 @@ GetOptions(\%opts,
            'vs|V',
            'vsr',
            'vsp',
+           'zipdist',
            'add|x:s' => \@files,
            'program|p:s' => \%progs,
            'ppd:s',
@@ -92,6 +93,7 @@ Options:
  [ --no_cfg ]              : do not read a .ppmcfg configuration file
  [ --vsr]                  : add version string to the archive filename
  [ --vsp]                  : add version string to the ppd filename
+ [ --zipdist]              : create a zip file of the .ppd and .tar.gz files
 
 Additional Arguments:
 
@@ -256,6 +258,13 @@ archive filename.
 This option, if enabled, will add a version string 
 (based on the VERSION reported in the ppd file) to the 
 ppd filename.
+
+=item [--zipdist]
+
+If enabled, this option will create a zip file C<archive.zip>
+consisting of the C<archive.ppd> ppd file and the C<archive.tar.gz>
+archive file, suitable for local installations. A short README
+file giving the command for installation is also included.
 
 =item [--cpan]
 
