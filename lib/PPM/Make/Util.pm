@@ -1012,7 +1012,8 @@ Gets a list of CPAN mirrors, incorporating any from CPAN.pm.
 
 sub url_list {
   my @urls;
-  if (HAS_CPAN) {
+  if (HAS_CPAN and defined $CPAN::Config->{urllist} and
+      ref($CPAN::Config->{urllist}) eq 'ARRAY') {
     push @urls, @{$CPAN::Config->{urllist}};
   }
   push @urls, 'ftp://ftp.cpan.org', 'http://www.cpan.org';

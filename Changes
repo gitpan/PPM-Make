@@ -1,5 +1,11 @@
 Revision history for Perl extension PPM::Make.
 
+0.70 Tue Mar 23 11:00:00 2004
+  - fix warning in PPM::Make::Util when CPAN.pm is configured
+    but doesn't have a url_list
+  - added more checks in make_zipdist of PPM::Make when
+    the codebase isn't a local file
+
 0.69 Mon Mar 22 23:00:00 2004
   - use Archive::Zip::AZ_OK(), rather than AZ_OK().
   - add zipdist option to make a .zip file consisting

@@ -19,7 +19,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.69';
+$VERSION = '0.70';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -1045,13 +1045,18 @@ sub make_zipdist {
   my ($self, $dist) = @_;
   my $ppd = $self->{ppd};
   (my $zipdist = $ppd) =~ s!\.ppd$!.zip!;
+  if (-f $zipdist) {
+      unlink $zipdist or warn "Could not unlink $zipdist: $!";
+  }
   my $cb = $self->{codebase};
-  my ($path, $arc);
+  my ($path, $archive, $local);
   if ($cb =~ m!/!) {
-    ($path, $arc) = $cb =~ m!(.*)/(.*)!;
+    ($path, $archive) = $cb =~ m!(.*)/(.*)!;
+    $local = ($path !~ m!(http|ftp)://! 
+              and not File::Spec->file_name_is_absolute($path) ) ? 1 : 0;
   }
   else {
-    $arc = $cb;
+    $archive = $cb;
   }
   my $readme = 'README.ppm';
   open(my $fh, '>', $readme) or die "Cannot open $readme: $!";
@@ -1065,33 +1070,34 @@ END
   close $fh;
 
   my $zip = $self->{has}->{zip};
+  my $copy = $local ? File::Spec::Unix->catfile($path, $archive) : $archive;
   if ($zip eq 'Archive::Zip') {
-    my %contents = ($ppd => $ppd,
-                    $arc => $cb,
-                    $readme => 'README');
-    my $arc = Archive::Zip->new();
-    foreach (keys %contents) {
-      print "Adding $_ as $contents{$_}\n";
-      unless ($arc->addFile($_, $contents{$_})) {
-        die "Failed to add $_";
+      my %contents = ($ppd => $ppd,
+                      $archive => $copy,
+                      $readme => 'README');
+      my $arc = Archive::Zip->new();
+      foreach (keys %contents) {
+          print "Adding $_ as $contents{$_}\n";
+          unless ($arc->addFile($_, $contents{$_})) {
+              die "Failed to add $_";
+          }
       }
-    }
-    die "Writing to $zipdist failed" 
-      unless $arc->writeToFileNamed($zipdist) == Archive::Zip::AZ_OK();
+      die "Writing to $zipdist failed" 
+          unless $arc->writeToFileNamed($zipdist) == Archive::Zip::AZ_OK();
   }
   else {
-    if ($path and $path !~ m!(http|ftp)://!) {
-      unless (-d $path) {
-        mkpath($path, 1, 0777) or die "Cannot mkpath $path: $!";
+      if ($path and $local) {
+          unless (-d $path) {
+              mkpath($path, 1, 0777) or die "Cannot mkpath $path: $!";
+          }
+          copy($archive, $copy) or die "Cannot cp $archive to $copy: $!";
       }
-      copy($arc, "$path/$arc") or die "Cannot cp $arc to $path: $!";
-    }
-    my @args = ($zip, $zipdist, $ppd, $cb, $readme);
-    print "@args\n";
-    system(@args) == 0 or die "@args failed: $?";
-    if (-d $path) {
-      rmtree($path, 1, 1) or warn "Cannot rmtree $path: $!";
-    }
+      my @args = ($zip, $zipdist, $ppd, $copy, $readme);
+      print "@args\n";
+      system(@args) == 0 or die "@args failed: $?";
+      if ($path and $local and -d $path) {
+          rmtree($path, 1, 1) or warn "Cannot rmtree $path: $!";
+      }
   }
   unlink $readme;
 }
