@@ -11,7 +11,7 @@ use File::Path;
 use Config;
 use LWP::Simple qw(getstore is_success);
 our ($VERSION);
-$VERSION = '0.68';
+$VERSION = '0.71';
 
 use constant WIN32 => $^O eq 'MSWin32';
 
@@ -39,9 +39,10 @@ use constant HAS_CPAN => has_cpan();
 
 sub has_ppm {
   my $has_ppm = 0;
-  eval {require PPM;};
-  $has_ppm = 1 unless $@;
-  return $has_ppm;
+  my $ppm = File::Spec->catfile($Config{bin}, 'ppm.bat');
+  return unless -f $ppm;
+  eval{require PPM;};
+  return $@ ? 3 : 2;
 }
 use constant HAS_PPM => has_ppm();
 
@@ -1433,7 +1434,7 @@ sub what_have_you {
   }
 
   $has{perl} = 
-    $Config{perlpath} || which('perl');
+    $^X || which('perl');
   
   foreach (qw(tar gzip make perl)) {
     unless ($has{$_}) {

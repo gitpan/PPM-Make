@@ -19,7 +19,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.70';
+$VERSION = '0.71';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;

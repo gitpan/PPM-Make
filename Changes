@@ -1,5 +1,9 @@
 Revision history for Perl extension PPM::Make.
 
+0.71 Fri Apr 2 11:00:00 2004
+  - fix bug in ppm_install for ppm3
+  - use $^X rather than $Config{perlpath} for perl binary
+
 0.70 Tue Mar 23 11:00:00 2004
   - fix warning in PPM::Make::Util when CPAN.pm is configured
     but doesn't have a url_list

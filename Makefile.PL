@@ -213,8 +213,8 @@ WARN
   }
 }
 
-eval{require PPM; };
-if ($@) {
+my $ppm = File::Spec->catfile($Config{bin}, 'ppm.bat');
+unless (-f $ppm) {
   print <<'WARN';
 
 I could not find the PPM module, used to install packages.

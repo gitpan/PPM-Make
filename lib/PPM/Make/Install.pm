@@ -6,7 +6,7 @@ use PPM::Make::Util qw(:all);
 use Config;
 use Cwd;
 our ($VERSION);
-$VERSION = '0.68';
+$VERSION = '0.71';
 
 sub new {
   my ($class, %opts) = @_;
@@ -113,27 +113,33 @@ sub ppm_install {
   my $cwd = $self->{cwd};
   (my $package = $self->{ppd}) =~ s!\.ppd$!!;
   my $version = $self->{version};
-  my $status = 
-    package_status($package, cpan2ppd_version($version));
-  die "Version $version of $package is already installed"
-    if $status == 1;
-  if ($status == 0 and not $self->{opts}->{upgrade}) {
-    die qq{Specify the upgrade switch to upgrade $package.};
-  }
   print "Installing $package ...\n";
-  if ($status == -1) {
-    PPM::InstallPackage(package => $package,
-                        location => $cwd) 
-        or die "Could not install $package: $PPM::PPMERR";
+  if (HAS_PPM >= 3) {
+    my @args = $self->{opts}->{upgrade} ?
+      ('ppm', 'upgrade', $self->{ppd}) :
+        ('ppm', 'install', $self->{ppd});
+    system(@args) == 0 or die "Cannot install/upgrade $self->{ppd}: $?";
   }
   else {
-    PPM::UpgradePackage(package => $package,
-                        location => $cwd) 
-        or die "Could not install $package: $PPM::PPMERR";    
+    my $status = 
+      package_status($package, cpan2ppd_version($version));
+    die "Version $version of $package is already installed"
+      if $status == 1;
+    if ($status == 0 and not $self->{opts}->{upgrade}) {
+      die qq{Specify the upgrade switch to upgrade $package.};
+    }
+    my @args;
+    if ($status == -1) {
+      PPM::InstallPackage(package => $package,
+                          location => $cwd) 
+          or die "Could not install $package: $PPM::PPMERR";
+    }
+    else {
+      PPM::UpgradePackage(package => $package,
+                          location => $cwd) 
+          or die "Could not install $package: $PPM::PPMERR";    
+    }
   }
-#  my @args = ('ppm', 'install', $self->{ppd});
-#  print "@args\n";
-#  system(@args) == 0 or warn "Can't install $self->{ppd}: $?";
   return unless $self->{opts}->{remove};
   my $file = $self->{file};
   unless ($file) {
