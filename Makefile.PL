@@ -6,7 +6,7 @@ use Config;
 require File::Spec;
 use constant WIN32 => $^O eq 'MSWin32';
 
-my %prereqs = ('Pod::Parser' => 1.13,
+my %prereqs = ('Pod::Find' => 0.23,
 	       'File::Spec' => 0,
 	       'LWP' => 0,
 	       'XML::Parser' => 2,

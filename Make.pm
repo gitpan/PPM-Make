@@ -17,7 +17,7 @@ require File::Spec;
 use Pod::Html;
 use constant WIN32 => $^O eq 'MSWin32';
 use vars qw($VERSION);
-$VERSION = '0.48';
+$VERSION = '0.49';
 my @path_ext = ();
 
 my %Escape = ('&' => 'amp',
@@ -76,7 +76,7 @@ sub new {
       $file = $env;
     }
     else {
-      warn(qq{Cannot find '$env' from \$ENV{PPM_CFG}});
+      warn qq{Cannot find '$env' from \$ENV{PPM_CFG}};
     }
   }
   else {
@@ -396,7 +396,7 @@ sub extract_dist {
     if ($suffix eq '.zip') {
       ($unzip eq 'Archive::Zip') && do {
 	my $arc = Archive::Zip->new();
-	die "Read of $file failed" unless $arc->read($file) == AZ_OK();
+        die "Read of $file failed" unless $arc->read($file) == AZ_OK();
 	$arc->extractTree();
 	last EXTRACT;
       };
@@ -593,24 +593,28 @@ sub guess_abstract {
   my $self = shift;
   my $args = $self->{args};
   my $cwd = $self->{cwd};
+  my $result;
   if (my $version_from = $args->{VERSION_FROM}) {
     print "Trying to get ABSTRACT from $version_from ...\n";
-    my $result = parse_abstract($args->{NAME}, $version_from);
+    $result = parse_abstract($args->{NAME}, $version_from);
     return $result if $result;
   }
   my ($hit, $guess);
-  if ($args->{NAME} =~ /-|:/) {
-    ($guess = $args->{NAME}) =~ s!.*[-:](.*)!$1.pm!;
+  for my $ext (qw(pm pod)) {
+    if ($args->{NAME} =~ /-|:/) {
+      ($guess = $args->{NAME}) =~ s!.*[-:](.*)!$1.$ext!;
+    }
+    else {
+      $guess = $args->{NAME} . ".$ext";
+    }
+    finddepth(sub{$_ eq $guess && ($hit = $File::Find::name) 
+		    && ($hit !~ m!blib/!)}, $cwd);
+    next unless (-f $hit);
+    print "Trying to get ABSTRACT from $hit ...\n";
+    $result = parse_abstract($args->{NAME}, $hit);
+    return $result if $result;
   }
-  else {
-    $guess = $args->{NAME} . '.pm';
-  }
-  finddepth(sub{$_ eq $guess && ($hit = $File::Find::name) 
-		  && ($hit !~ m!blib/!)}, $cwd);
-  return unless (-f $hit);
-  print "Trying to get ABSTRACT from $hit ...\n";
-  my $result = parse_abstract($args->{NAME}, $hit);
-  return $result;
+  return;
 }
 
 sub parse_abstract {
@@ -795,7 +799,7 @@ sub make_dist {
 		  $self->{ARCHITECTURE} =~ /Win32/i);
 
   my $script = $self->{opts}->{script};
-  my $script_is_external = ($script =~ /$protocol/);
+  my $script_is_external = $script ? ($script =~ /$protocol/) : '';
   my @files;
   if ($self->{opts}->{add}) {
     @files = @{$self->{opts}->{add}};
@@ -813,8 +817,9 @@ sub make_dist {
       my @f;
       my $arc = Archive::Tar->new();
       if ($is_Win32) {
-	finddepth(sub {next if $File::Find::name =~ m!blib/man\d!; 
-		       push @f, $File::Find::name; 
+        finddepth(sub { 
+                       push @f, $File::Find::name
+                          unless $File::Find::name =~ m!blib/man\d!;
 		       print $File::Find::name,"\n"}, 'blib');
       }
       else {
@@ -839,8 +844,10 @@ sub make_dist {
 
       if ($is_Win32) {
 	my @f;
-	finddepth(sub {next unless $File::Find::name =~ m!blib/man\d!; 
-		       push @f, $File::Find::name;}, 'blib');
+        finddepth(sub { 
+                       push @f, $File::Find::name
+                          unless $File::Find::name =~ m!blib/man\d!;},
+                             'blib');
 	for (@f) {
 	  push @args, "--exclude", $_;
 	}
@@ -866,20 +873,21 @@ sub make_dist {
       $name .= '.zip';
       my $arc = Archive::Zip->new();
       if ($is_Win32) {
-	$arc->addTree('blib', 'blib',
-		      sub{not m!blib/man\d/!; print "$_\n";});
+        die "zip of blib failed" unless $arc->addTree('blib', 'blib',
+                     sub{$_ !~ m!blib/man\d/! && print "$_\n";}) == AZ_OK();
       }
       else {
-	$arc->addTree('blib', 'blib', 
-		      sub{print "$_\n";});
+        die "zip of blib failed" unless $arc->addTree('blib', 'blib', 
+                              sub{print "$_\n";}) == AZ_OK();
       }
       if ($script and not $script_is_external) {
-	$arc->addTree($script, $script);
+        die "zip of $script failed"
+           unless $arc->addTree($script, $script) == AZ_OK();
 	print "$script\n";
       }
       if (@files) {
 	for (@files) {
-	  $arc->addTree($_, $_);
+          die "zip of $_ failed" unless $arc->addTree($_, $_) == AZ_OK();
 	  print "$_\n";
 	}
       }
@@ -900,8 +908,10 @@ sub make_dist {
       }
       if ($is_Win32) {
 	my @f;
-	finddepth(sub {next unless $File::Find::name =~ m!blib/man\d!;
-		       push @f, $File::Find::name;}, 'blib');
+        finddepth(sub {
+                       push @f, $File::Find::name
+                          unless $File::Find::name =~ m!blib/man\d!;},
+                             'blib');
 	for (@f) {
 	  push @args, "-x", $_;
 	}
@@ -997,9 +1007,9 @@ sub ppm_install {
   unlink $file or warn "Cannot unlink $file: $!";
 }
 
-sub escape {
+sub html_escape {
   my $text = shift;
-  $text =~ s/([<>\"&])/\&$Escape{$1};/mg;
+  $text =~ s/([<>\"&])(?!\w+;)/\&$Escape{$1};/mg;
   $text;
 }
 
@@ -1021,9 +1031,9 @@ sub parse_ppd {
 sub print_ppd {
   my ($self, $d, $fn) = @_;
   my $fh = new IO::File ">$fn" or die "Couldn't write to $fn: $!";
-  my $title = escape($d->{TITLE});
-  my $abstract = escape($d->{ABSTRACT});
-  my $author = escape($d->{AUTHOR});
+  my $title = html_escape($d->{TITLE});
+  my $abstract = html_escape($d->{ABSTRACT});
+  my $author = html_escape($d->{AUTHOR});
   print $fh <<"END";
 <SOFTPKG NAME=\"$d->{SOFTPKG}->{NAME}\" VERSION=\"$d->{SOFTPKG}->{VERSION}\">
 \t<TITLE>$title</TITLE>
@@ -1230,7 +1240,7 @@ sub char {
   my $tag = $internal->{_current};
   
   if ($tag and $internal->{wanted}->{$tag}) {
-    $internal->{$tag} .= escape($string);
+    $internal->{$tag} .= html_escape($string);
   }
   elsif ($tag and $tag eq 'INSTALL') {
     $internal->{INSTALL}->{SCRIPT} .= $string;
@@ -1248,13 +1258,6 @@ sub end {
 sub final {
   my $self = shift;
   return $self->{_mydata};
-}
-
-sub escape {
-  local $_ = shift;
-  s/</&lt;/g;
-  s/>/&gt;/g;
-  return $_;
 }
 
 sub path_ext {

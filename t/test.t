@@ -57,8 +57,9 @@ my $is_Win32 = ($d->{OS}->{NAME} =~ /Win32/i);
 
 my @f;
 if ($is_Win32) {
-  finddepth(sub {next if $File::Find::name =~ m!blib/man\d!; 
-		 push @f, $File::Find::name; 
+  finddepth(sub { 
+                 push @f, $File::Find::name unless
+                     $File::Find::name =~ m!blib/man\d!;
 		 print $File::Find::name,"\n"}, 'blib');
 }
 else {
@@ -89,7 +90,7 @@ else {
 ok($#f, $#files);
 unlink ($ppd, $tgz, "t/$ppd", "t/$tgz");
 my $os = 'homer-simpson';
-my $arch = 'c-wren';
+$arch = 'c-wren';
 my $url = 'http://www.disney.com/ppmpackages/';
 my $script = 'README';
 my $exec = 'notepad.exe';
