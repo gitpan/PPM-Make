@@ -1,5 +1,16 @@
 Revision history for Perl extension PPM::Make.
 
+0.48 Wed Feb 18 12:48:00 2003
+
+  - offer to get nmake for Win32, if not present
+  - add capability to upload ppd and archive files
+  - support for ini configuration files added
+  - don't include dependencies if they're part of the core,
+    or are contained in /^perl$/
+  - make no default for "exec" if a script is specified
+  - if the script matches !^(http|ftp)://!, use it as
+    the HREF attribute of INSTALL.
+
 0.41 Wed Dec 16 12:48:00 2002
 
   - fix parsing of Makefile to avoid unquoted keys

@@ -7,3 +7,4 @@ README
 INSTALL
 make_ppm
 t/test.t
+t/ppm.cfg

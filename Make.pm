@@ -1,6 +1,7 @@
 package PPM::Make;
 use strict;
 #use warnings;
+use Config::IniFiles;
 use Cwd;
 use Pod::Find qw(pod_find contains_pod);
 use File::Basename;
@@ -9,13 +10,14 @@ use File::Find;
 use File::Copy;
 use Config;
 use CPAN;
+use Net::FTP;
 use XML::Parser;
 use LWP::Simple qw(getstore is_success);
 require File::Spec;
 use Pod::Html;
 use constant WIN32 => $^O eq 'MSWin32';
 use vars qw($VERSION);
-$VERSION = '0.41';
+$VERSION = '0.48';
 my @path_ext = ();
 
 my %Escape = ('&' => 'amp',
@@ -25,6 +27,7 @@ my %Escape = ('&' => 'amp',
 	     );
 
 my $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)};
+my $protocol = qr{^(http|ftp)://};
 
 my $has_myconfig = 0;
 if ($ENV{HOME}) {
@@ -41,31 +44,9 @@ die "CPAN.pm must be configured first" if $@;
 sub new {
   my ($class, %opts) = @_;
 
-  my %legal = 
-    map {$_ => 1} qw(force ignore binary zip install clean program
-                     dist script exec os arch arch_sub add as vs);
-  foreach (keys %opts) {
-    next if $legal{$_};
-    warn "Unknown option '$_' ... ignoring\n";
-  }
-  if (exists $opts{add}) {
-    die "Please supply an ARRAY reference to 'add'"
-      unless ref($opts{add}) eq 'ARRAY';
-  }
-  if (exists $opts{program}) {
-    die "Please supply an HASH reference to 'program'"
-      unless ref($opts{program}) eq 'HASH';
-  }  
+  die "\nInvalid option specification" unless check_opts(%opts);
+  
   $opts{zip} = 1 if ($opts{binary} and $opts{binary} =~ /\.zip$/);
-
-  if (my $progs = $opts{program}) {
-    my %ok = map {$_ => 1} qw(zip unzip tar gzip make);
-    foreach (keys %{$progs}) {
-      next if $ok{$_};
-      warn "Unknown program option '$_' ... ignoring\n";
-    }
-  }
-
   $opts{as} = defined $opts{as} ? $opts{as} : 1;
 
   my $arch;
@@ -87,16 +68,35 @@ sub new {
   else {
     $os = $Config{osname};
   }
+  my $has = what_have_you($opts{program}, $arch, $os);
+  
+  my (%cfg, $file);
+  if (defined $ENV{PPM_CFG} and my $env = $ENV{PPM_CFG}) {
+    if (-e $env) {
+      $file = $env;
+    }
+    else {
+      warn(qq{Cannot find '$env' from \$ENV{PPM_CFG}});
+    }
+  }
+  else {
+    my $home = (WIN32 ? '/.ppmcfg' : "$ENV{HOME}/.ppmcfg");
+    $file = $home if (-e $home);
+  }
+  if ($file) {
+    %cfg = read_cfg($file, $arch) or die "\nError reading config file";
+  }
+  
+  my $opts = %cfg ? merge_opts(\%cfg, \%opts) : \%opts;
   my $self = {
-	      opts => \%opts || {},
-	      ext => qr/(\.tar\.gz|\.tar\.Z|\.tgz|\.zip)$/,
-	      protocol => qr!(http|ftp|file)://!,
+	      opts => $opts || {},
 	      cwd => '',
-	      has => {},
+	      has => $has,
 	      args => {},
 	      abstract => '',
 	      author => '',
 	      ppd => '',
+	      archive => '',
 	      html => 'blib/html',
 	      file => '',
 	      version => '',
@@ -104,8 +104,53 @@ sub new {
 	      OS => $os,
 	     };
   path_ext() if WIN32;
-  $self->{has} = what_have_you($opts{program}, $arch, $os);
   bless $self, $class;
+}
+
+sub check_opts {
+  my %opts = @_;
+  my %legal = 
+    map {$_ => 1} qw(force ignore binary zip install clean program
+                     dist script exec os arch arch_sub add as vs upload);
+  foreach (keys %opts) {
+    next if $legal{$_};
+    warn "Unknown option '$_'\n";
+    return;
+  }
+
+  if (defined $opts{add}) {
+    unless (ref($opts{add}) eq 'ARRAY') {
+      warn "Please supply an ARRAY reference to 'add'";
+      return;
+    }
+  }
+
+  if (defined $opts{program} and my $progs = $opts{program}) {
+    unless (ref($progs) eq 'HASH') {
+      warn "Please supply an HASH reference to 'program'";
+      return;
+    }
+    my %ok = map {$_ => 1} qw(zip unzip tar gzip make);
+    foreach (keys %{$progs}) {
+      next if $ok{$_};
+      warn "Unknown program option '$_'\n";
+      return;
+    }
+  }
+  
+  if (defined $opts{upload} and my $upload = $opts{upload}) {
+    unless (ref($upload) eq 'HASH') {
+      warn "Please supply an HASH reference to 'upload'";
+      return;
+    }
+    my %ok = map {$_ => 1} qw(ppd ar host user passwd);
+    foreach (keys %{$upload}) {
+      next if $ok{$_};
+      warn "Unknown upload option '$_'\n";
+      return;
+    }
+  }
+  return 1;
 }
 
 sub what_have_you {
@@ -181,13 +226,85 @@ sub what_have_you {
   return \%has;
 }
 
+sub read_cfg {
+  my ($file, $arch) = @_;
+  my $default = 'default';
+  my $cfg = Config::IniFiles->new(-file => $file, -default => $default);
+  my @p;
+  push @p, $cfg->Parameters($default) if ($cfg->SectionExists($default));
+  push @p, $cfg->Parameters($arch) if ($cfg->SectionExists($arch));
+  unless (@p > 1) {
+    warn "No default or section for $arch found";
+    return;
+  }
+  
+  my $on = qr!^(on|yes)$!;
+  my $off = qr!^(off|no)$!;
+  my %legal_progs = map {$_ => 1} qw(tar gzip make perl);
+  my %legal_upload = map {$_ => 1} qw(ppd ar host user passwd); 
+  my (%cfg, %programs, %upload);
+  foreach (@p) {
+    my $val = $cfg->val($arch, $_);
+    $val = 1 if ($val =~ /$on/i);
+    if ($val =~ /$off/i) {
+      delete $cfg{$_};
+      next;
+    }
+    if ($_ eq 'add') {
+      $cfg{$_} = [split ' ', $val];
+      next;
+    }
+    if ($legal_progs{$_}) {
+      $programs{$_} = $val;
+    }
+    elsif ($legal_upload{$_}) {
+      $upload{$_} = $val;
+    }
+    else {
+      $cfg{$_} = $val;
+    }
+  }
+  $cfg{program} = \%programs if %programs;
+  $cfg{upload} = \%upload if %upload;
+  return check_opts(%cfg) ? %cfg : undef;
+}
+
+# merge two hashes, assuming the second one takes precedence 
+# over the first in the case of duplicate keys
+sub merge_opts {
+  my ($h1, $h2) = @_;
+  my %opts = (%{$h1}, %{$h2});
+  if (defined $h1->{add} or defined $h2->{add}) {
+    my @a;
+    push @a, @{$h1->{add}} if $h1->{add};
+    push @a, @{$h2->{add}} if $h2->{add};
+    my %add = map {$_ => 1} @a;
+    $opts{add} = [keys %add];
+  }
+  for (qw(program upload)) {
+    next unless (defined $h1->{$_} or defined $h2->{$_});
+    my %h = ();
+    if (defined $h1->{$_}) {
+      if (defined $h2->{$_}) {
+	%h = (%{$h1->{$_}}, %{$h2->{$_}});
+      }
+      else {
+	%h = %{$h1->{$_}};
+      }
+    }
+    else {
+      %h = %{$h2->{$_}};     
+    }
+    $opts{$_} = \%h;
+  }
+  return \%opts;
+}
+
 sub make_ppm {
   my $self = shift;
   die 'No software available to make a zip archive'
      if ($self->{opts}->{zip} and not $self->{has}->{zip});
   my $dist = $self->{opts}->{dist};
-  my $protocol = $self->{protocol};
-  my $ext = $self->{ext};
   if ($dist) {
     $dist = $self->fetch_dist($dist) 
       if ($dist =~ m!$protocol! or $dist !~ m!$ext!);
@@ -217,11 +334,17 @@ sub make_ppm {
     die 'Must have the ppm utility to install' unless $self->{has}->{ppm};
     $self->ppm_install();
   }
+  if (defined $self->{opts}->{upload}) {
+    die 'Please specify the location to place the ppd file'
+      unless $self->{opts}->{upload}->{ppd}; 
+    $self->upload_ppm();
+  }
 }
 
 sub check_script {
   my $self = shift;
   my $script = $self->{opts}->{script};
+  return if ($script =~ m!$protocol!);
   my ($name, $path, $suffix) = fileparse($script, '\..*');
   my $file = $name . $suffix;
   $self->{opts}->{script} = $file;
@@ -244,8 +367,6 @@ sub check_files {
 
 sub fetch_dist {
   my ($self, $dist) = @_;
-  my $ext = $self->{ext};
-  my $protocol = $self->{protocol};
   unless ($dist =~ m!$ext!) {
     my $mod = $dist;
     $mod =~ s!-!::!g;
@@ -308,7 +429,6 @@ sub extract_dist {
 sub adjust_binary {
   my $self = shift;
   my $binary = $self->{opts}->{binary};
-  my $ext = $self->{ext};
   my $archname = $self->{ARCHITECTURE};
   return unless $archname;
   if ($binary) {
@@ -351,7 +471,7 @@ sub build_dist {
       $makepl_arg .= ' BINARY_LOCATION=' . $binary;
     }
   }
-  if ($script) {
+  if ($script and $script !~ m!$protocol!) {
     if ($makepl_arg =~ /PPM_INSTALL_SCRIPT/) {
       $makepl_arg =~ s!(.*PPM_INSTALL_SCRIPT=)\S+(.*)!$1$script$2!;
     }
@@ -359,7 +479,6 @@ sub build_dist {
       $makepl_arg .= ' PPM_INSTALL_SCRIPT=' . $script;
     }
   }
-  $exec = 'perl' if (not $exec and $script);
   
   if ($exec) {
     if ($makepl_arg =~ /PPM_INSTALL_EXEC/) {
@@ -369,6 +488,7 @@ sub build_dist {
       $makepl_arg .= ' PPM_INSTALL_EXEC=' . $exec;
     }
   }
+
   if ($makepl_arg) {
     push @args, (split ' ', $makepl_arg);
   }
@@ -656,7 +776,6 @@ sub make_dist {
   my $args = $self->{args};
   my $has = $self->{has};
   my ($tar, $gzip, $zip) = @$has{qw(tar gzip zip)};
-  my $ext = $self->{ext};
   my $force_zip = $self->{opts}->{zip};
   my $binary = $self->{opts}->{binary};
   my $name;
@@ -676,6 +795,7 @@ sub make_dist {
 		  $self->{ARCHITECTURE} =~ /Win32/i);
 
   my $script = $self->{opts}->{script};
+  my $script_is_external = ($script =~ /$protocol/);
   my @files;
   if ($self->{opts}->{add}) {
     @files = @{$self->{opts}->{add}};
@@ -701,7 +821,7 @@ sub make_dist {
 	finddepth(sub {push @f, $File::Find::name; 
 		       print $File::Find::name,"\n"}, 'blib');
       }
-      if ($script) {
+      if ($script and not $script_is_external) {
 	push @f, $script;
 	print "$script\n";
       }
@@ -728,7 +848,7 @@ sub make_dist {
 
       push @args, 'blib';
 
-      if ($script) {
+      if ($script and not $script_is_external) {
 	push @args, $script;
       }
       if (@files) {
@@ -753,7 +873,7 @@ sub make_dist {
 	$arc->addTree('blib', 'blib', 
 		      sub{print "$_\n";});
       }
-      if ($script) {
+      if ($script and not $script_is_external) {
 	$arc->addTree($script, $script);
 	print "$script\n";
       }
@@ -770,7 +890,7 @@ sub make_dist {
     ($zip) && do {
       $name .= '.zip';
       my @args = ($zip, '-r', $name, 'blib');
-      if ($script) {
+      if ($script and not $script_is_external) {
 	push @args, $script;
 	print "$script\n";
       }
@@ -808,7 +928,6 @@ sub fix_ppd {
   my $abstract = $self->{abstract};
   my $author = $self->{author};
   my $binary = $self->{opts}->{binary};
-  my $ext = $self->{ext};
   my $edit_binary = ($binary and $binary =~ m!\.(tar\.gz|zip)$!) ? 0 : 1;
   my $os = $self->{OS};
   my $arch = $self->{ARCHITECTURE};
@@ -838,13 +957,20 @@ sub fix_ppd {
     }
   }
   $d->{CODEBASE}->{HREF} = $binary ? $binary : $dist;
-  
+  ($self->{archive} = $d->{CODEBASE}->{HREF}) =~ s!.*/(.*)!$1!;
+
   my $script = $self->{opts}->{script};
   if ($script) {
     my $exec = $self->{opts}->{exec};
-    $exec ||= 'perl';
-    $d->{INSTALL}->{SCRIPT} = $script;
-    $d->{INSTALL}->{EXEC} = $exec;
+    $d->{INSTALL}->{EXEC} = $exec if $exec;
+    if ($script =~ m!$protocol!) {
+      $d->{INSTALL}->{HREF} = $script;
+      (my $name = $script) =~ s!.*/(.*)!$1!;
+      $d->{INSTALL}->{SCRIPT} = $name;
+    }
+    else {
+      $d->{INSTALL}->{SCRIPT} = $script;      
+    }
   }
 
   $self->print_ppd($d, $ppd);
@@ -908,8 +1034,9 @@ END
 
   if (scalar @{$d->{DEPENDENCY}} > 0) {
     foreach (@{$d->{DEPENDENCY}}) {
+      next if is_core($_->{NAME});
       my $dist = mod_to_dist($_->{NAME});
-      next if (not $dist or $dist =~ m!^perl-5!);
+      next if (not $dist or $dist =~ m!^perl$!);
       print $fh qq{\t\t<DEPENDENCY NAME="$dist" VERSION="$_->{VERSION}" />\n};
     }
   }
@@ -917,14 +1044,67 @@ END
     print $fh qq{\t\t<$_ NAME="$d->{$_}->{NAME}" />\n} if $self->{$_};
   }
   
-  if ($d->{INSTALL}->{SCRIPT}) {
-    print $fh qq{\t\t<INSTALL EXEC="$d->{INSTALL}->{EXEC}">$d->{INSTALL}->{SCRIPT}</INSTALL>\n};
+  my $script = $d->{INSTALL}->{SCRIPT};
+  if ($script) {
+    my $exec = $d->{INSTALL}->{EXEC};
+    my $href = $d->{INSTALL}->{HREF};
+    my $install = 'INSTALL';
+    $install .= qq{ EXEC="$exec"} if $exec;
+    $install .= qq{ HREF="$href"} if $href;
+    print $fh qq{\t\t<$install>$script</INSTALL>\n};
   }
   print $fh qq{\t\t<CODEBASE HREF="$d->{CODEBASE}->{HREF}" />\n};
   
   print $fh qq{\t</IMPLEMENTATION>\n</SOFTPKG>\n};
   $fh->close;
 
+}
+
+sub upload_ppm {
+  my $self = shift;
+  my ($ppd, $archive) = ($self->{ppd}, $self->{archive});
+  my $upload = $self->{opts}->{upload};
+  my $ppd_loc = $upload->{ppd};
+  my $ar_loc = $self->{opts}->{arch_sub} ?
+    $self->{ARCHITECTURE} : $upload->{ar} || $ppd_loc;
+  if (not File::Spec->file_name_is_absolute($ar_loc)) {
+    ($ar_loc = File::Spec->catdir($ppd_loc, $ar_loc)) =~ s!\\!/!g;
+  }
+
+  if (my $host = $upload->{host}) {
+    my ($user, $passwd) = ($upload->{user}, $upload->{passwd});
+    die "Must specify a username and password to log into $host"
+      unless ($user and $passwd);
+    my $ftp = Net::FTP->new($host) or die "Cannot connect to $host";
+    $ftp->login($user, $passwd) or die "Login for user $user failed";
+    $ftp->cwd($ppd_loc) or die "cwd to $ppd_loc failed";
+    $ftp->ascii;
+    $ftp->put($ppd) or die "Cannot upload $ppd";
+    $ftp->cwd($ar_loc) or die "cwd to $ar_loc failed";
+    $ftp->binary;
+    $ftp->put($archive) or die "Cannot upload $archive";
+    $ftp->quit;
+  }
+  else {
+    copy($ppd, "$ppd_loc/$ppd") 
+      or die "Cannot copy $ppd to $ppd_loc: $!";
+    copy($archive, "$ar_loc/$archive") 
+      or die "Cannot copy $archive to $ar_loc: $!";
+  }
+}
+
+sub is_core {
+  my $m = shift;
+  $m =~ s!::|-!/!g;
+  $m = $m . '.pm';
+  my $is_core;
+  foreach (@INC) {
+    if (-f "$_/$m") {
+      $is_core++ if ($_ !~ /site/);
+      last;
+    }
+  }
+  return $is_core;
 }
 
 sub mod_to_dist {
@@ -1140,6 +1320,46 @@ local installation via
 
 and for distribution via a repository.
 
+Options can be given as some combination of key/value
+pairs passed to the I<new()> constructor (described below) 
+and those specified in a configuration file.
+This file can either be that given by the value of
+the I<PPM_CFG> environment variable or, if not set,
+a file called F<.ppmcfg> at the top-level
+directory (on Win32) or under I<HOME> (on Unix).
+
+The configuration file is of an INI type. If a section
+I<default> is specified as
+
+  [ default ]
+  option1 = value1
+  option2 = value2
+
+these values will be used as the default. Architecture-specific
+values may be specified within their own section:
+
+  [ MSWin32-x86-multi-thread-5.8 ]
+  option1 = new_value1
+  option3 = value3
+
+In this case, an architecture specified as
+I<MSWin32-x86-multi-thread-5.8> within PPM::Make will
+have I<option1 = new_value1>, I<option2 = value2>,
+and I<option3 = value3>, while any other architecture
+will have I<option1 = value1> and I<option2 = value2>.
+Options specified within the configuration file
+can be overridden by passing the option into
+the I<new()> method of PPM::Make.
+
+Valid options that may be specified within the 
+configuration file are those of PPM::Make, described below. 
+For the I<program> and I<upload> options (which take hash references),
+the keys (make, zip, unzip, tar, gzip),
+or (ppd, ar, host, user, passwd), respectively,
+should be specified. For binary options, a value
+of I<yes|on> in the configuration file will be interpreted
+as true, while I<no|off> will be interpreted as false.
+
 =head2 OPTIONS
 
 The available options accepted by the I<new> constructor are
@@ -1175,14 +1395,16 @@ I<CODEBASE> field in the ppd file.
 The value of I<script> is used in the I<PPM_INSTALL_SCRIPT>
 attribute passed to C<perl Makefile.PL>, and arises in
 setting the value of the I<INSTALL> field in the ppd file.
+If this begins with I<http://> or I<ftp://>, so that the
+script is assumed external, this will be
+used as the I<HREF> attribute for I<INSTALL>.
 
 =item exec => value
 
 The value of I<exec> is used in the I<PPM_INSTALL_EXEC>
 attribute passed to C<perl Makefile.PL>, and arises in
 setting the I<EXEC> attribute of the I<INSTALL> field
-in the ppd file. This defaults to C<perl> when a value
-of I<script> is specified.
+in the ppd file. 
 
 =item  add => \@files
 
@@ -1250,6 +1472,44 @@ practice.
 This option, if enabled, will add a version string 
 (based on the VERSION reported in the ppd file) to the 
 ppd and archive filenames.
+
+=item upload => {key1 => val1, key2 => val2, ...}
+
+If given, this option will copy the ppd and archive files
+to the specified locations. The available options are
+
+=over
+
+=item ppd => $path_to_ppd_files
+
+This is the location where the ppd file should be placed,
+and must be given as an absolute pathname.
+
+=item ar => $path_to_archive_files
+
+This is the location where the archive file should be placed.
+This may either be an absolute pathname or a relative one,
+in which case it is interpreted to be relative to that
+specified by I<ppd>. If this is not given, and yet I<ppd>
+is specified, then this defaults, first of all, to the
+value of I<arch_sub>, if given, or else to the value
+of I<ppd>.
+
+=item host => $hostname
+
+If specified, an ftp transfer to the specified host is
+done, with I<ppd> and I<ar> as described above.
+
+=item user => $username
+
+This specifies the user name to login as when transferring
+via ftp.
+
+=item passwd => $passwd
+
+This is the associated password to use for I<user>
+
+=back
 
 =back
 
@@ -1347,6 +1607,11 @@ if available, will be used to install the distribution.
 The I<clean> option, if specified, will remove the build
 directory and the distribution file for a distribution
 specified with the I<dist> option.
+
+=item upload the ppm files
+
+If the I<upload> option is specified, the ppd and archive
+files will be copied to the given locations.
 
 =back
 

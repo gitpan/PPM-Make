@@ -7,11 +7,14 @@
 # change 'tests => 1' to 'tests => last_test_to_print';
 use Test;
 use strict;
-BEGIN { plan tests => 26 };
+use Cwd;
+my $cwd = getcwd;
+BEGIN { plan tests => 48 };
 use PPM::Make;
 use Config;
 use File::Path;
 use File::Find;
+$ENV{PPM_CFG} = "$cwd/t/bogus";
 ok(1); # If we made it this far, we're ok.
 
 #########################
@@ -19,23 +22,19 @@ ok(1); # If we made it this far, we're ok.
 # Insert your test code below, the Test module is use()ed here so read
 # its man page ( perldoc Test ) for help writing this test script.
 
-my $ppm = PPM::Make->new();
+my $ppm = PPM::Make->new(upload => {ppd => "$cwd/t"});
 ok($ppm);
 my $name = 'PPM-Make';
 my $ppd = $name . '.ppd';
 my $tgz = $name . '.tar.gz';
 $ppm->make_ppm();
-if (-e $ppd) {
-   ok(1);
-}
-else {
-   ok('ppd not created', 1);
-}
-if (-e $tgz) {
-   ok(1);
-}
-else {
-   ok('archive not created', 1);
+for ($ppd, $tgz, "t/$ppd", "t/$tgz") {
+  if (-e $_) {
+    ok(1);
+  }
+  else {
+    ok(qq{'$_' not created}, 1);
+  }
 }
 
 my $author = q{Randy Kobes &lt;randy@theory.uwinnipeg.ca&gt;};
@@ -88,7 +87,7 @@ else {
 }
 
 ok($#f, $#files);
-unlink ($ppd, $tgz);
+unlink ($ppd, $tgz, "t/$ppd", "t/$tgz");
 my $os = 'homer-simpson';
 my $arch = 'c-wren';
 my $url = 'http://www.disney.com/ppmpackages/';
@@ -99,18 +98,15 @@ my @args = ($ppm->{has}->{perl}, '-Mblib', 'make_ppm',
         '-s', $script, '-e', $exec);
 system(@args) == 0 or die "system @args failed: $?";
 
-if (-e $ppd) {
-   ok(1);
+for ($ppd, $tgz) {
+  if (-e $_) {
+    ok(1);
+  }
+  else {
+    ok(qq{'$_' not created}, 1);
+  }
 }
-else {
-   ok('ppd not created', 1);
-}
-if (-e $tgz) {
-   ok(1);
-}
-else {
-   ok('archive not created', 1);
-}
+
 $d = PPM::Make::parse_ppd($ppd);
 ok($d);
 ok($d->{SOFTPKG}->{NAME}, $name);
@@ -146,3 +142,35 @@ else {
 }
 ok($#f+1, $#files);
 unlink ($ppd, $tgz);
+
+$ENV{PPM_CFG} = "$cwd/t/ppm.cfg";
+$ppm = PPM::Make->new(arch => 'foo');
+ok($ppm);
+my $opts = $ppm->{opts};
+ok($opts);
+ok( $opts->{upload}->{user}, 'sarah');
+ok( $opts->{upload}->{passwd}, 'justina');
+ok( $opts->{upload}->{ppd}, '/home/to/wherever');
+ok( $opts->{upload}->{host}, 'a.galaxy.far.far.away');
+ok( $opts->{upload}->{ar}, undef);
+ok( $opts->{binary}, 'http://www.foo.com/bar');
+ok( $opts->{vs}, 1);
+$ppm = PPM::Make->new(arch => 'bar');
+$opts = $ppm->{opts};
+ok( $opts->{binary}, 'http://www.foo.com/bar');
+ok( $opts->{vs}, undef);
+ok( $opts->{upload}->{ppd}, '/path/to/ppds');
+ok( $opts->{upload}->{ar}, 'x86');
+$ppm = PPM::Make->new(arch => 'harry');
+$opts = $ppm->{opts};
+ok( $opts->{binary}, 'http://www.foo.com/bar');
+ok( $opts->{vs}, 1);
+ok( $opts->{upload}->{host}, undef);
+$ppm = PPM::Make->new(arch => 'foo', vs => 0, binary => 'http://localhost',
+		     upload => {ppd => '/another/path', user => 'lianne'});
+$opts = $ppm->{opts};
+ok( $opts->{binary}, 'http://localhost');
+ok( $opts->{vs}, 0);
+ok( $opts->{upload}->{ppd}, '/another/path');
+ok( $opts->{upload}->{user}, 'lianne');
+

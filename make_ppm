@@ -8,24 +8,28 @@ my %opts = ();
 my @files = ();
 my %progs = ();
 my $result = GetOptions(\%opts, 
-			'l|install',
-			'z|zip',
-			'f|force',
-			'i|ignore',
-			'b|binary=s',
-                        'n|arch_sub',
-			's|script=s',
-			'e|exec=s',
-			'o|os:s',
-			'a|arch:s',
-			'v|version',
-			'h|help',
-			'r|remove',
-			'h|html',
-			'A|as!',
-			'V|vs',
-			'x|add=s' => \@files,
-			'p|program=s' => \%progs,
+			'install|l',
+			'zip|z',
+			'force|f',
+			'ignore|i',
+			'binary|b:s',
+                        'arch_sub|n',
+			'script|s:s',
+			'exec|e:s',
+			'os|o:s',
+			'arch|a:s',
+			'version|v',
+			'help|h',
+			'remove|r',
+			'as|A!',
+			'vs|V',
+			'add|x:s' => \@files,
+			'program|p:s' => \%progs,
+			'ppd:s',
+			'ar:s',
+			'host:s',
+			'user:s',
+			'passwd:s',
 		       );
 if ($opts{v}) {
   print <<"END";
@@ -64,6 +68,11 @@ Options:
  [-p | --program]  b=a     : specify "a" to be used for the "b" program
  [-A | --as]               : add Perl version number to ARCHITECTURE (>= 5.8)
  [-V | --ppmv]             : add version string to ppd and archive filenames
+ [ --ppd ]  location       : copy the ppd to the specified location
+ [ --ar ]   location       : copy the archive file to the specified location
+ [ --host]  host           : use the specified host for copying the ppm files
+ [ --user]  user           : username to use when trasnferring ppm files
+ [ --passwd] password      : password associated with user
 
 Additional Arguments:
    Module       : specify a module to fetch (requires CPAN.pm)
@@ -77,15 +86,19 @@ END
 }
 
 my $dist = shift;
-my $ppm = PPM::Make->new(zip => $opts{z}, force => $opts{f},
-                         ignore => $opts{i}, binary => $opts{b},
-                         dist => $dist, script => $opts{'s'},
-			 exec => $opts{e}, os => $opts{o},
-			 arch => $opts{a}, arch_sub => $opts{n},
-			 install => $opts{l}, clean => $opts{r},
-			 add => \@files, program => \%progs,
-			 as => $opts{A}, vs => $opts{V},
-			);
+my %upload = ();
+
+for (qw(binary script exec add program ppd ar host user passwd)) {
+  die "Please supply an argument to '$_'"
+     if ( defined $opts{$_} and $opts{$_} eq "");
+}
+
+for (qw(ppd ar host user passwd)) {
+  $upload{$_} = delete $opts{$_};
+}
+$opts{upload} = \%upload if defined $upload{ppd};
+
+my $ppm = PPM::Make->new(%opts);
 $ppm->make_ppm();
 
 __END__
@@ -124,7 +137,10 @@ additional arguments (eg, F<package.tar.gz>, or
 I<http://someplace.org/package.tar.gz>) will be interpreted
 as distributions to fetch and build.
 
-Available options include:
+Options can be read from a configuration file
+(see L<PPM::Make>) and/or given as options to I<make_ppm>.
+In case of duplicates, the options to I<make_ppm> take
+precedence. Available options include:
 
 =over
 
@@ -178,14 +194,16 @@ will not be included in the ppd file.
 This will be used in the I<PPM_INSTALL_SCRIPT>
 attribute passed to C<perl Makefile.PL>, and arises in
 setting the value of the I<INSTALL> field in the ppd file.
+If this begins with I<http://> or I<ftp://>, so that the
+script is assumed external, this will be
+used as the I<HREF> attribute for I<INSTALL>.
 
 =item [-e | -- exec] exec
 
 This will be used in the I<PPM_INSTALL_EXEC>
 attribute passed to C<perl Makefile.PL>, and arises in
 setting the I<EXEC> attribute of the I<INSTALL> field
-in the ppd file. This defaults to C<perl> when a value
-of I<script> is specified.
+in the ppd file.
 
 =item  [-x | --add] file
 
@@ -209,6 +227,34 @@ This option specifies that C</path/to/program> should be used
 for C<program>, rather than the one PPM::Make finds. This option
 can be specified multiple times, with
 C<program> being one of C<tar>, C<gzip>, C<zip>, C<unzip>, or C<make>.
+
+=item ppd $path_to_ppd_files
+
+If given, this will copy the ppd file to the location specified,
+and must be given as an absolute pathname. If I<host> is specified,
+this copy will be done via ftp, otherwise a local copy is made.
+
+=item ar $path_to_archive_files
+
+This is the location where the archive file should be placed.
+This may either be an absolute pathname or a relative one,
+in which case it is interpreted to be relative to that
+specified by I<ppd>. If this is not given, but I<ppd>
+is specified, this will default to the value of I<ppd>.
+
+=item host $hostname
+
+If specified, an ftp transfer to the specified host is
+done, with I<ppd> and I<ar> as described above.
+
+=item user $username
+
+This specifies the user name to login as when transferring
+via ftp.
+
+=item passwd $passwd
+
+This is the associated password to use for I<user>
 
 =item [-A | --as]
 
