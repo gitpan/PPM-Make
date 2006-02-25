@@ -1,6 +1,15 @@
 Revision history for Perl extension PPM::Make.
 
-0.75 Sat Set 4 2004
+0.76 Sat, Jan 8, 2006
+  - add dependency on File::HomeDir to obtain $ENV{HOME}
+  - allow argument to make_ppm accept a local file as the
+    source of a distribution
+  - add capability to make a ppm package for a Bundle/Task file,
+    to install a list of prerequisites
+  - fix loading of CPAN::Config to account for recent CPAN.pm changes
+  - add dependency on PPM
+
+0.75 Sat Sep 4 2004
   - adjust the routines for getting module and distribution
     information to accept an array reference of values, and
     return a corresponding hash reference. This cuts down

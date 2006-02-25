@@ -11,21 +11,24 @@ use File::Path;
 use Config;
 use LWP::Simple qw(getstore is_success);
 use CPAN::DistnameInfo;
+use File::HomeDir;
 our ($VERSION);
-$VERSION = '0.71';
+$VERSION = '0.76';
 
 use constant WIN32 => $^O eq 'MSWin32';
 
 sub has_cpan {
   my $has_config = 0;
   require File::Spec;
-  if ($ENV{HOME}) {
+  my $home = File::HomeDir->my_home;
+  if ($home) {
     eval 
-      {require File::Spec->catfile($ENV{HOME}, '.cpan', 
+      {require File::Spec->catfile($home, '.cpan', 
                                    'CPAN', 'MyConfig.pm');};
     $has_config = 1 unless $@;
   }
   unless ($has_config) {
+    eval {require CPAN::HandleConfig;};
     eval {require CPAN::Config;};
     my $dir;
     unless (WIN32) {
@@ -328,11 +331,12 @@ sub which {
   my $program = shift;
   return undef unless $program;
   my @results = ();
+  my $home = File::HomeDir->my_home;
   for my $base (map { File::Spec->catfile($_, $program) } File::Spec->path()) {
-    if ($ENV{HOME} and not WIN32) {
+    if ($home and not WIN32) {
       # only works on Unix, but that's normal:
       # on Win32 the shell doesn't have special treatment of '~'
-      $base =~ s/~/$ENV{HOME}/o;
+      $base =~ s/~/$home/o;
     }
     return $base if -x $base;
     
@@ -873,7 +877,8 @@ If the file is specified beginning with I<http://> or I<ftp://>:
   my $filename = fetch_file($file);
 
 will grab this file directly. Otherwise, if the file has
-an extension I<\.(tar\.gz|tgz|tar\.Z|zip)>, it will assume
+an extension I<\.(tar\.gz|tgz|tar\.Z|zip)>, if the file
+exists locally, it will use that; otherwise, it will assume
 this is a CPAN distribution and grab it from a CPAN mirror:
 
   my $dist = 'A/AB/ABC/file.tar.gz';
@@ -892,6 +897,13 @@ if found.
 sub fetch_file {
   my ($dist, $no_case) = @_;
   my $to;
+  if (-f $dist) {
+    $to = basename($dist, $ext);
+    unless ($dist eq $to) {
+      copy($dist, $to) or die "Cannot cp $dist to $to: $!";
+    }
+    return $to;
+  }
   if ($dist =~ m!$protocol!) {
     ($to = $dist) =~ s!.*/(.*)!$1!;
     print "Fetching $dist ....\n";
@@ -1168,7 +1180,8 @@ __END__
 
 =head1 COPYRIGHT
 
-This program is copyright, 2003, by Randy Kobes <randy@theoryx5.uwinnipeg.ca>.
+This program is copyright, 2003, 2006 by 
+Randy Kobes <r.kobes@uwinnipeg.ca>.
 It is distributed under the same terms as Perl itself.
 
 =head1 SEE ALSO

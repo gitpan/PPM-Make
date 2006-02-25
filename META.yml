@@ -1,20 +1,34 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         PPM-Make
-version:      0.75
+version:      0.76
 version_from: lib/PPM/Make.pm
 installdirs:  site
+abstract:     Make a ppm package from a CPAN distribution
+authored_by:
+    - Randy Kobes <r.kobes@uwinnipeg.ca>
 requires:
     Config::IniFiles:              0
     CPAN::DistnameInfo:            0
+    File::HomeDir:                 0.52
     File::Spec:                    0
     Getopt::Long:                  2.33
     LWP:                           0
     Pod::Find:                     0.23
     Pod::Usage:                    1
+    PPM:                           0
     SOAP::Lite:                    0
     XML::Parser:                   2
     YAML:                          0
-
+provides:
+  PPM::Make:
+    file: lib/PPM/Make.pm
+    version: 0.76
+  PPM::Make::Util:
+    file: lib/PPM/Make/Util.pm
+    version: 0.76
+  PPM::Make::Install:
+    file: lib/PPM/Make/Install.pm
+    version: 0.76
 distribution_type: module
 generated_by: ExtUtils::MakeMaker version 6.17

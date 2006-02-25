@@ -15,10 +15,11 @@ use LWP::Simple qw(getstore is_success);
 require File::Spec;
 use Pod::Html;
 use Safe;
+use File::HomeDir;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.75';
+$VERSION = '0.76';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -143,7 +144,7 @@ sub get_cfg_file {
       return;
     }
   }
-  if (defined $ENV{HOME} and my $home = $ENV{HOME}) {
+  if (my $home = File::HomeDir->my_home) {
     my $candidate = File::Spec->catfile($home, '.ppmcfg');
     return $candidate if (-e $candidate);
   }
@@ -237,7 +238,7 @@ sub make_ppm {
   if ($dist) {
     my $build_dir = $PPM::Make::Util::build_dir;
     chdir $build_dir or die "Cannot chdir to $build_dir: $!";
-#    print "Working directory: $build_dir\n"; 
+    print "Working directory: $build_dir\n"; 
     die $ERROR unless ($dist = fetch_file($dist, no_case => $no_case));
 #      if ($dist =~ m!$protocol! 
 #          or $dist =~ m!^\w/\w\w/! or $dist !~ m!$ext!);
@@ -277,6 +278,7 @@ sub make_ppm {
     or warn "Could not extract version information";
   $self->make_html() unless (-d 'blib/html' and not $force);
   $dist = $self->make_dist();
+  $self->bundle() if ($dist =~ /^(Bundle|Task)/i);
   $self->make_ppd($dist);
 #  if ($self->{opts}->{install}) {
 #    die 'Must have the ppm utility to install' unless HAS_PPM;
@@ -655,6 +657,73 @@ sub parse_abstract {
   close($fh);
   chomp($result);
   return $result;
+}
+
+sub bundle {
+  my $self = shift;
+  my $args = $self->{args};
+  my $result = $self->guess_bundle();
+  if ($result and ref($result) eq 'ARRAY') {
+    warn "Extracting Bundle/Task info ...\n";
+    foreach my $mod(@$result) {
+      $args->{PREREQ_PM}->{$mod} = 0;
+    }
+  }
+  else {
+    warn "Please check prerequisites in the ppd file\n";
+  }
+}
+
+sub guess_bundle {
+  my $self = shift;
+  my $args = $self->{args};
+  my $cwd = $self->{cwd};
+  my $result;
+  for my $guess(qw(ABSTRACT_FROM VERSION_FROM)) {
+    if (my $file = $args->{$guess}) {
+      print "Trying to get Bundle/Task info from $file ...\n";
+      $result = parse_bundle($file);
+      return $result if $result;
+    }
+  }
+  my ($hit, $guess);
+  for my $ext (qw(pm pod)) {
+    if ($args->{NAME} =~ /-|:/) {
+      ($guess = $args->{NAME}) =~ s!.*[-:](.*)!$1.$ext!;
+    }
+    else {
+      $guess = $args->{NAME} . ".$ext";
+    }
+    finddepth(sub{$_ eq $guess && ($hit !~ m!blib/!)
+		    && ($hit = $File::Find::name) }, $cwd);
+    next unless (-f $hit);
+    print "Trying to get Bundle?Task info from $hit ...\n";
+    $result = parse_bundle($hit);
+    return $result if $result;
+  }
+  return;
+}
+
+sub parse_bundle {
+  my ($file) = @_;
+  my @result;
+  local $/ = "\n";
+  my $in_cont = 0;
+  open(my $fh, $file) or die "Couldn't open $file: $!";
+  while (<$fh>) {
+    $in_cont = m/^=(?!head1\s+(CONTENTS|DESCRIPTION))/ ? 0 :
+      m/^=head1\s+(CONTENTS|DESCRIPTION)/ ? 1 : $in_cont;
+    next unless $in_cont;
+    next if /^=/;
+    s/\#.*//;
+    next if /^\s+$/;
+    chomp;
+    my $result = (split " ", $_, 2)[0];
+    $result =~ s/^L<(.*?)>/$1/;
+    push @result, $result;
+  }
+  close $fh;
+  return (scalar(@result) > 0) ? \@result : undef;
 }
 
 sub author {
@@ -1456,6 +1525,11 @@ pod documentation of likely files.
 If an I<AUTHOR> attribute in F<Makefile.PL> is not given,
 an attempt is made to get the author information using I<CPAN.pm>.
 
+=item determining Bundle information
+
+If the distribution is a Bundle, extract the prerequisites
+from the associated module for insertion in the ppd file.
+
 =item HTML documentation
 
 C<pod2html> is used to generate a set of html documentation.
@@ -1503,7 +1577,8 @@ made in the module.
 
 =head1 COPYRIGHT
 
-This program is copyright, 2003, by Randy Kobes <randy@theoryx5.uwinnipeg.ca>.
+This program is copyright, 2003, 2006 
+by Randy Kobes <r.kobes@uwinnipeg.ca>.
 It is distributed under the same terms as Perl itself.
 
 =head1 SEE ALSO

@@ -17,6 +17,8 @@ my %prereqs = ('Pod::Find' => 0.23,
                'Pod::Usage' => 1,
                'CPAN::DistnameInfo' => 0,
                'SOAP::Lite' => 0,
+               'PPM'   => 0,
+	       'File::HomeDir' => 0.52,
 	       );
 
 my $home = $ENV{HOME};
@@ -28,6 +30,7 @@ if ($home) {
 }
 
 unless ($has_myconfig) {
+  eval {require CPAN::HandleConfig;};
   eval {require CPAN::Config;};
 }
 
@@ -267,15 +270,24 @@ WARN
 
 my @exe_files = qw(make_ppm ppm_install);
 #push @exe_files, 'tk-ppm' if WIN32;
+
+my $eu_version = $ExtUtils::MakeMaker::VERSION;
+my %opts;
+if ($eu_version >= 5.43) {
+  $opts{ABSTRACT_FROM} = q{lib/PPM/Make.pm};
+  $opts{AUTHOR} = 'Randy Kobes <r.kobes@uwinnipeg.ca>';
+}
+if ($eu_version > 6.11 ) {
+  $opts{NO_META} = 1;
+}
+
 WriteMakefile(
               NAME         => 'PPM::Make',
               VERSION_FROM => 'lib/PPM/Make.pm',
               EXE_FILES    => [@exe_files],
               dist         => {COMPRESS => 'gzip', SUFFIX => 'gz'},
 	      PREREQ_PM    => \%prereqs,
-	      ($] >= 5.005 ?   
-               (ABSTRACT_FROM => 'lib/PPM/Make.pm',
-		AUTHOR     => 'Randy Kobes <randy@theory.uwinnipeg.ca>') : ()),
+	      %opts,
 	     );
 
 sub path_ext {

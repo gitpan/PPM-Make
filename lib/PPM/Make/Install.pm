@@ -6,7 +6,7 @@ use PPM::Make::Util qw(:all);
 use Config;
 use Cwd;
 our ($VERSION);
-$VERSION = '0.71';
+$VERSION = '0.76';
 
 sub new {
   my ($class, %opts) = @_;
@@ -204,7 +204,8 @@ or C<make>.
 
 =head1 COPYRIGHT
 
-This program is copyright, 2003, by Randy Kobes <randy@theoryx5.uwinnipeg.ca>.
+This program is copyright, 2003, 2006 by 
+Randy Kobes <r.kobes@uwinnipeg.ca>.
 It is distributed under the same terms as Perl itself.
 
 =head1 SEE ALSO

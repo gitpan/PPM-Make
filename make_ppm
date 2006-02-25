@@ -94,11 +94,16 @@ Options:
  [ --vsr]                  : add version string to the archive filename
  [ --vsp]                  : add version string to the ppd filename
  [ --zipdist]              : create a zip file of the .ppd and .tar.gz files
+ [ --autobundle]           : create a CPAN.pm-like autobundle ppd file
 
 Additional Arguments:
 
    Module       : specify a module to fetch (requires CPAN.pm)
    Distribution : specify a distribution to fetch
+
+If the I<autobundle> option is specified, an additional (optional)
+argument will be interpreted as the name of the Bundle ppd file to 
+use.
 
 With no arguments, make_ppm will build a distribution
 inside the current directory. 
