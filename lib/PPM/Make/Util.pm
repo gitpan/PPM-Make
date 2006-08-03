@@ -12,8 +12,9 @@ use Config;
 use LWP::Simple qw(getstore is_success);
 use CPAN::DistnameInfo;
 use File::HomeDir;
+use HTML::Entities qw(encode_entities encode_entities_numeric);
 our ($VERSION);
-$VERSION = '0.76';
+$VERSION = '0.78';
 
 use constant WIN32 => $^O eq 'MSWin32';
 
@@ -66,7 +67,7 @@ our (@EXPORT_OK, %EXPORT_TAGS, $protocol, $ext, $src_dir, $build_dir, $ERROR);
 $protocol = qr{^(http|ftp)://};
 $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)};
 
-my @exports = qw(load_cs verifyMD5 html_escape parse_version $ERROR
+my @exports = qw(load_cs verifyMD5 xml_encode parse_version $ERROR
                  is_core trim which parse_ppd parse_ppm
                  ppd2cpan_version cpan2ppd_version tempfile what_have_you
                  mod_search dist_search file_to_dist fetch_nmake
@@ -188,18 +189,19 @@ sub verifyMD5 {
   }
 }
 
-=item html_escape
+=item xml_encode
 
-Escapes E<amp>, E<gt>, E<lt>, and E<quot>.
+Escapes E<amp>, E<gt>, E<lt>, and E<quot>, as well as high ASCII characters.
 
-  my $escaped = html_escape('Five is > four');
+  my $escaped = xml_encode('Five is > four');
 
 =cut
 
-sub html_escape {
-  local $_ = shift;
-  s/([<>\"&])(?!\w+;)/\&$Escape{$1};/mg;
-  $_;
+sub xml_encode {
+    my $s = shift;
+    return unless $s;
+    my $e = encode_entities($s, q{<>&"'});
+    return encode_entities_numeric($e, "\177-\377");
 }
 
 =item is_core
@@ -437,7 +439,7 @@ sub ppd_char {
   my $tag = $internal->{_current};
   
   if ($tag and $internal->{wanted}->{$tag}) {
-    $internal->{$tag} .= html_escape($string);
+    $internal->{$tag} .= xml_encode($string);
   }
   elsif ($tag and $tag eq 'INSTALL') {
     $internal->{INSTALL}->{SCRIPT} .= $string;
@@ -507,7 +509,7 @@ sub ppm_char {
   my $tag = $internal->{_current};
   
   if ($tag and $internal->{wanted}->{$tag}) {
-    $internal->{$tag} .= html_escape($string);
+    $internal->{$tag} .= xml_encode($string);
   }
 }
 

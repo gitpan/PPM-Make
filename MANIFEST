@@ -1,6 +1,11 @@
 lib/PPM/Make.pm
 lib/PPM/Make/Util.pm
 lib/PPM/Make/Install.pm
+lib/PPM/XML/Element.pm
+lib/PPM/XML/PPD.pm
+lib/PPM/XML/PPMConfig.pm
+lib/PPM/XML/RepositorySummary.pm
+lib/PPM/XML/ValidatingElement.pm
 Changes
 Makefile.PL
 MANIFEST

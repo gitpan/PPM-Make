@@ -19,7 +19,7 @@ use File::HomeDir;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.76';
+$VERSION = '0.78';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -474,7 +474,9 @@ sub parse_build {
 
 sub parse_yaml {
   my $self = shift;
-  my $props = LoadFile('META.yml');
+  my $props;
+  eval {$props = LoadFile('META.yml')};
+  return if $@;
   my $author = ($props->{author} and ref($props->{author}) eq 'ARRAY') ?
     $props->{author}->[0] : $props->{author};
   my %r = ( NAME => $props->{name},
@@ -1044,10 +1046,11 @@ sub make_ppd {
 sub print_ppd {
   my ($self, $d, $fn) = @_;
   open (my $fh, ">$fn") or die "Couldn't write to $fn: $!";
-  my $title = html_escape($d->{TITLE});
-  my $abstract = html_escape($d->{ABSTRACT});
-  my $author = html_escape($d->{AUTHOR});
+  my $title = xml_encode($d->{TITLE});
+  my $abstract = xml_encode($d->{ABSTRACT});
+  my $author = xml_encode($d->{AUTHOR});
   print $fh <<"END";
+<?xml version="1.0" encoding="UTF-8"?>
 <SOFTPKG NAME=\"$d->{SOFTPKG}->{NAME}\" VERSION=\"$d->{SOFTPKG}->{VERSION}\">
 \t<TITLE>$title</TITLE>
 \t<ABSTRACT>$abstract</ABSTRACT>

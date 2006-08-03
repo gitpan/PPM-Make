@@ -17,8 +17,8 @@ my %prereqs = ('Pod::Find' => 0.23,
                'Pod::Usage' => 1,
                'CPAN::DistnameInfo' => 0,
                'SOAP::Lite' => 0,
-               'PPM'   => 0,
 	       'File::HomeDir' => 0.52,
+               'HTML::Entities' => 0,
 	       );
 
 my $home = $ENV{HOME};
@@ -237,31 +237,6 @@ WARN
 
 The package will still be able to function in creating
 ppm files, but cannot install them.
-
-WARN
-    
-  }
-}
-
-eval{require PPM::Repositories; };
-if ($@ and WIN32) {
-  print <<'WARN';
-
-The PPM::Repositories is needed for the tk-ppm script
-(a Tk interface to ppm) in order to provide a list of
-available repositories. I can add this to the list of
-prerequisites to install, if you like.
-
-WARN
-  my $ans = prompt('Add PPM::Repositories?', 'yes');
-  if ($ans =~ /^y/i) {
-    $prereqs{'PPM::Repositories'} = 0;
-  }
-  else {
-    print <<'WARN';
-
-The tk-ppm script will not be usable, but the rest of
-the scripts and modules will be fine.
 
 WARN
     

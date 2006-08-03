@@ -1,4 +1,15 @@
 Revision history for Perl extension PPM::Make.
+0.78 Wed, Aug 2, 2006
+  - drop requirement of PPM, and supply the needed files
+    in the distribution, as the PPM distribution will install
+    a ppm.bat which overwrites an existing (newer) ppm
+    (reported by Serguei Trouchelle)
+  - use HTML::Entities to encode fields in ppd file, so
+    that high ASCII characters get encoded
+    (reported by Serguei Trouchelle)
+  - don't die if error results in loading META.yml file
+  - rename html_escape routine of PPM::Make::Util to
+    xml_encode, to better reflect purpose
 
 0.76 Sat, Jan 8, 2006
   - add dependency on File::HomeDir to obtain $ENV{HOME}
