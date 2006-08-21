@@ -19,7 +19,7 @@ use File::HomeDir;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.78';
+$VERSION = '0.79';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;

@@ -14,9 +14,12 @@ use CPAN::DistnameInfo;
 use File::HomeDir;
 use HTML::Entities qw(encode_entities encode_entities_numeric);
 our ($VERSION);
-$VERSION = '0.78';
+$VERSION = '0.79';
 
 use constant WIN32 => $^O eq 'MSWin32';
+
+my %encode = ('&' => '&amp;', '>' => '&gt;',
+	      '<' => '&lt;', '"' => '&quot;');
 
 sub has_cpan {
   my $has_config = 0;
@@ -200,8 +203,8 @@ Escapes E<amp>, E<gt>, E<lt>, and E<quot>, as well as high ASCII characters.
 sub xml_encode {
     my $s = shift;
     return unless $s;
-    my $e = encode_entities($s, q{<>&"'});
-    return encode_entities_numeric($e, "\177-\377");
+    $s =~ s/(&(?!(amp|lt|gt|quot);)|>|<|\")/$encode{$1}/g;
+    return encode_entities_numeric($s, "\177-\377");
 }
 
 =item is_core
