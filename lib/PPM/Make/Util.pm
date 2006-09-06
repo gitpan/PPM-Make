@@ -13,8 +13,10 @@ use LWP::Simple qw(getstore is_success);
 use CPAN::DistnameInfo;
 use File::HomeDir;
 use HTML::Entities qw(encode_entities encode_entities_numeric);
+use File::Spec;
+
 our ($VERSION);
-$VERSION = '0.79';
+$VERSION = '0.83';
 
 use constant WIN32 => $^O eq 'MSWin32';
 
@@ -220,15 +222,10 @@ of directory.
 
 sub is_core {
   my $m = shift;
+  return unless $m;
   $m =~ s!::|-!/!g;
   $m .= '.pm';
-  my $is_core;
-  foreach (@INC) {
-    if (-f "$_/$m") {
-      $is_core++ if ($_ !~ /site/);
-      last;
-    }
-  }
+  my $is_core = (-e File::Spec->catfile($Config{privlibexp}, $m)) ? 1 : 0;
   return $is_core;
 }
 
@@ -389,6 +386,7 @@ sub ppd_init {
 		      TITLE => '',
 		      AUTHOR => '',
 		      ABSTRACT => '',
+		      PROVIDE => [],
 		      OS => {NAME => ''},
 		      ARCHITECTURE => {NAME => ''},
 		      CODEBASE => {HREF => ''},
@@ -410,6 +408,19 @@ sub ppd_start {
       $internal->{SOFTPKG}->{VERSION} = $attrs{VERSION};
       last SWITCH;
     };
+    ($tag eq 'PROVIDE') and do {
+      my $name = $attrs{NAME};
+      my $version = $attrs{VERSION};
+      if ($version) {
+	push @{$internal->{PROVIDE}},
+	  {NAME => $name, VERSION => $version};
+      }
+      else {
+	push @{$internal->{PROVIDE}},
+	  {NAME => $name};	
+      }
+      last SWITCH;
+    };
     ($tag eq 'CODEBASE') and do {
       $internal->{CODEBASE}->{HREF} = $attrs{HREF};
       last SWITCH;
@@ -424,6 +435,7 @@ sub ppd_start {
     };
     ($tag eq 'INSTALL') and do {
      $internal->{INSTALL}->{EXEC} = $attrs{EXEC};
+     $internal->{INSTALL}->{HREF} = $attrs{HREF};
       last SWITCH;
    };
     ($tag eq 'DEPENDENCY') and do {
@@ -800,8 +812,8 @@ sub cpan_dist_search {
       my $string = $match->as_string;
       my $cpan_file;
       if ($string =~ /id\s*=\s*(.*?)\n/m) {
-        $cpan_file = $1;
-        next unless $cpan_file;
+	$cpan_file = $1;
+	next unless $cpan_file;
       }
       my ($dist, $version) = file_to_dist($cpan_file);
       next unless $dist eq $d;
@@ -809,21 +821,35 @@ sub cpan_dist_search {
       $dists->{dist_file} = $cpan_file;
       $dists->{dist_vers} = $version;
       if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
-        $dists->{author} = $1;
+	$dists->{author} = $1;
       }
-      my $mod;
-      if ($string =~ /\s+CONTAINSMODS\s+(\S+)/m) {
-        $mod = $1;
+      my $mods;
+      if ($string =~ /\s+CONTAINSMODS\s+(.*)/m) {
+	$mods = $1;
       }
-      next unless $mod;
-      my $module = CPAN::Shell->expand('Module', $mod);
-      if ($module) {
-        my $desc = $module->description;
-        $dists->{dist_abs} = $desc if $desc;
+      next unless $mods;
+      my @mods = split ' ', $mods;
+      next unless @mods;
+      (my $try = $dist) =~ s{-}{::}g;
+      foreach my $mod(@mods) {
+	my $module = CPAN::Shell->expand('Module', $mod);
+	next unless $module;
+	if ($mod eq $try) {
+	  my $desc = $module->description;
+	  $dists->{dist_abs} = $desc if $desc;
+	}
+	my $v = $module->cpan_version;
+	$v = undef if $v eq 'undef';
+	if ($v) {
+	  push @{$dists->{mods}}, {mod_name => $mod, mod_vers => $v};
+	}
+	else {
+	  push @{$dists->{mods}}, {mod_name => $mod};	
+	}
       }
     }
     if ($ref) {
-      $results->{$d} = $dists; 
+      $results->{$d} = $dists;
     }
     else {
       $results = $dists;

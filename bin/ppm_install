@@ -104,11 +104,12 @@ This prints out some version information and exits.
 
 =head1 COPYRIGHT
 
-This program is copyright, 2003, by Randy Kobes <randy@theoryx5.uwinnipeg.ca>.
+This program is copyright, 2003, by Randy Kobes 
+E<lt>r.kobes@uwinnipeg.caE<gt>.
 It is distributed under the same terms as Perl itself.
 
 =head1 SEE ALSO
 
-L<PPM::Make>, and L<PPM>.
+L<PPM> and L<PPM::Make>.
 
 =cut

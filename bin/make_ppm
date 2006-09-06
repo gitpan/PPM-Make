@@ -10,11 +10,12 @@ my %opts = ();
 my @files = ();
 my %progs = ();
 GetOptions(\%opts,
-           'zip|z',
+           'zip_archive|z',
            'force|f',
            'ignore|i',
            'cpan',
            'no_cfg',
+           'no-cfg',
            'no_case',
            'binary|b:s',
            'arch_sub|n',
@@ -32,9 +33,12 @@ GetOptions(\%opts,
            'program|p:s' => \%progs,
            'ppd:s',
            'ar:s',
+           'zip:s',
            'host:s',
            'user:s',
            'passwd:s',
+	   'no-ppm4',
+	   'no-html',
           ) or pod2usage(2);
 
 my $dist = shift;
@@ -45,11 +49,18 @@ for (qw(binary script exec add program ppd ar host user passwd)) {
      if ( defined $opts{$_} and $opts{$_} eq "");
 }
 
-for (qw(ppd ar host user passwd)) {
+for (qw(ppd ar host user passwd zip)) {
   $upload{$_} = delete $opts{$_};
 }
 $opts{upload} = \%upload if defined $upload{ppd};
 $opts{dist} = $dist if $dist;
+
+for (qw(cfg ppm4 html)) {
+  my $given = 'no-' . $_;
+  next unless $opts{$given};
+  my $passed = 'no_' . $_;
+  $opts{$passed} = delete $opts{$given};
+}
 
 my $ppm = PPM::Make->new(%opts);
 $ppm->make_ppm();
@@ -72,7 +83,6 @@ Options:
  [-b | --binary] location  : specify the binary location
  [-n | --arch_sub]         : use \$Config{archname} as a subdirectory
  [-s | --script] script    : specify a script in the <INSTALL> field
- [-x | --add] file         : add specified extra files to the archive
  [-e | --exec] exec        : specify the executable to run the <INSTALL> script
  [-x | --add] file         : add file to the archive
  [-o | --os] os            : use os for the <OS> field
@@ -85,25 +95,25 @@ Options:
  [-V | --ppmv]             : add version string to ppd and archive filenames
  [ --ppd ]  location       : copy the ppd to the specified location
  [ --ar ]   location       : copy the archive file to the specified location
+ [ -- ]   location       : copy the archive file to the specified location
  [ --host]  host           : use the specified host for copying the ppm files
  [ --user]  user           : username to use when transferring ppm files
  [ --passwd] password      : password associated with user
  [ --cpan ]                : make a CPAN distribution
  [ --no_case ]             : for module searches, ignore case
+ [ --no-case ]             : for module searches, ignore case
  [ --no_cfg ]              : do not read a .ppmcfg configuration file
+ [ --no-cfg ]              : do not read a .ppmcfg configuration file
  [ --vsr]                  : add version string to the archive filename
  [ --vsp]                  : add version string to the ppd filename
  [ --zipdist]              : create a zip file of the .ppd and .tar.gz files
- [ --autobundle]           : create a CPAN.pm-like autobundle ppd file
+ [ --no-ppm4]              : don't add ppm4 extensions to the ppd file
+ [ --no-html]              : don't generate html documentation
 
 Additional Arguments:
 
    Module       : specify a module to fetch (requires CPAN.pm)
    Distribution : specify a distribution to fetch
-
-If the I<autobundle> option is specified, an additional (optional)
-argument will be interpreted as the name of the Bundle ppd file to 
-use.
 
 With no arguments, make_ppm will build a distribution
 inside the current directory. 
@@ -187,7 +197,7 @@ If this begins with I<http://> or I<ftp://>, so that the
 script is assumed external, this will be
 used as the I<HREF> attribute for I<INSTALL>.
 
-=item [-e | -- exec] exec
+=item [-e | --exec] exec
 
 This will be used in the I<PPM_INSTALL_EXEC>
 attribute passed to C<perl Makefile.PL>, and arises in
@@ -212,13 +222,13 @@ for C<program>, rather than the one PPM::Make finds. This option
 can be specified multiple times, with
 C<program> being one of C<tar>, C<gzip>, C<zip>, C<unzip>, or C<make>.
 
-=item ppd $path_to_ppd_files
+=item [--ppd] $path_to_ppd_files
 
 If given, this will copy the ppd file to the location specified,
 and must be given as an absolute pathname. If I<host> is specified,
 this copy will be done via ftp, otherwise a local copy is made.
 
-=item ar $path_to_archive_files
+=item [--ar] $path_to_archive_file
 
 This is the location where the archive file should be placed.
 This may either be an absolute pathname or a relative one,
@@ -226,17 +236,26 @@ in which case it is interpreted to be relative to that
 specified by I<ppd>. If this is not given, but I<ppd>
 is specified, this will default to the value of I<ppd>.
 
-=item host $hostname
+=item [--zip] $path_to_zip_file
+
+This is the location where the zipped file created with the
+I<--zipdist> options should be placed.
+This may either be an absolute pathname or a relative one,
+in which case it is interpreted to be relative to that
+specified by I<ppd>. If this is not given, but I<ppd>
+is specified, this will default to the value of I<ppd>.
+
+=item [--host] $hostname
 
 If specified, an ftp transfer to the specified host is
 done, with I<ppd> and I<ar> as described above.
 
-=item user $username
+=item [--user] $username
 
 This specifies the user name to login as when transferring
 via ftp.
 
-=item passwd $passwd
+=item [--passwd] $passwd
 
 This is the associated password to use for I<user>
 
@@ -286,6 +305,20 @@ manner.
 If specified, do not attempt to read a F<.ppmcfg> configuration
 file.
 
+=item [--no-cfg]
+
+If specified, do not attempt to read a F<.ppmcfg> configuration
+file.
+
+=item [--no-ppm4]
+
+If specified, do not add ppm4 extensions (such as the
+I<PROVIDE> element) to the ppd file.
+
+=item [--no-html]
+
+If specified, do not build html documentation.
+
 =item [--help]
 
 This prints out a short help screen and exits.
@@ -298,7 +331,8 @@ This prints out some version information and exits.
 
 =head1 COPYRIGHT
 
-This program is copyright, 2002, by Randy Kobes <randy@theoryx5.uwinnipeg.ca>.
+This program is copyright, 2002, by Randy Kobes 
+E<lt>r.kobes@uwinnipeg.caE<gt>.
 It is distributed under the same terms as Perl itself.
 
 =head1 SEE ALSO

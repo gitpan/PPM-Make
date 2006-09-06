@@ -1,6 +1,7 @@
 lib/PPM/Make.pm
 lib/PPM/Make/Util.pm
 lib/PPM/Make/Install.pm
+lib/PPM/Make/RepositorySummary.pm
 lib/PPM/XML/Element.pm
 lib/PPM/XML/PPD.pm
 lib/PPM/XML/PPMConfig.pm
@@ -12,8 +13,20 @@ MANIFEST
 MANIFEST.SKIP
 README
 INSTALL
-make_ppm
-ppm_install
-t/test.t
+bin/make_ppm
+bin/ppm_install
+bin/rep_summary
+t/make.t
+t/summary.t
 t/ppm.cfg
+t/PPMPackages/Apache-Authen-Program.ppd
+t/PPMPackages/Apache-Session.ppd
+t/PPMPackages/AppConfig.ppd
+t/PPMPackages/Archive-Zip.ppd
+t/PPMPackages/PPI.ppd
+t/PPMPackages/mod_perl.ppd
+t/PPMPackages/cmp_package.lst
+t/PPMPackages/cmp_package.xml
+t/PPMPackages/cmp_searchsummary.ppm
+t/PPMPackages/cmp_summary.ppm
 META.yml                                Module meta-data (added by MakeMaker)

@@ -19,7 +19,7 @@ use File::HomeDir;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.79';
+$VERSION = '0.83';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -31,7 +31,7 @@ sub new {
 
   die "\nInvalid option specification" unless check_opts(%opts);
   
-  $opts{zip} = 1 if ($opts{binary} and $opts{binary} =~ /\.zip$/);
+  $opts{zip_archive} = 1 if ($opts{binary} and $opts{binary} =~ /\.zip$/);
 
   my ($arch, $os) = arch_and_os($opts{arch}, $opts{os}, $opts{noas});
   my $has = what_have_you($opts{program}, $arch, $os);
@@ -53,12 +53,15 @@ sub new {
 	      args => {},
 	      ppd => '',
 	      archive => '',
+	      zip => '',
               prereq_pm => {},
 	      file => '',
 	      version => '',
               use_mb => '',
 	      ARCHITECTURE => $arch,
 	      OS => $os,
+	      mod_search => undef,
+	      dist_search => undef,
 	     };
   bless $self, $class;
 }
@@ -66,9 +69,9 @@ sub new {
 sub check_opts {
   my %opts = @_;
   my %legal = 
-    map {$_ => 1} qw(force ignore binary zip remove program cpan
+    map {$_ => 1} qw(force ignore binary zip_archive remove program cpan
                      dist script exec os arch arch_sub add no_as vs upload
-                     no_case no_cfg vsr vsp zipdist);
+                     no_case no_cfg vsr vsp zipdist no_ppm4 no_html);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_'\n";
@@ -100,7 +103,7 @@ sub check_opts {
       warn "Please supply an HASH reference to 'upload'";
       return;
     }
-    my %ok = map {$_ => 1} qw(ppd ar host user passwd);
+    my %ok = map {$_ => 1} qw(ppd ar host user passwd zip);
     foreach (keys %{$upload}) {
       next if $ok{$_};
       warn "Unknown upload option '$_'\n";
@@ -170,7 +173,7 @@ sub read_cfg {
   my $on = qr!^(on|yes)$!;
   my $off = qr!^(off|no)$!;
   my %legal_progs = map {$_ => 1} qw(tar gzip make perl);
-  my %legal_upload = map {$_ => 1} qw(ppd ar host user passwd); 
+  my %legal_upload = map {$_ => 1} qw(ppd ar host user passwd zip);
   my (%cfg, %programs, %upload);
   foreach (@p) {
     my $val = $cfg->val($arch, $_);
@@ -232,7 +235,7 @@ sub merge_opts {
 sub make_ppm {
   my $self = shift;
   die 'No software available to make a zip archive'
-     if ( ($self->{opts}->{zip} or $self->{opts}->{zipdist})
+     if ( ($self->{opts}->{zip_archive} or $self->{opts}->{zipdist})
          and not $self->{has}->{zip});
   my $dist = $self->{opts}->{dist};
   if ($dist) {
@@ -276,7 +279,9 @@ sub make_ppm {
   $self->{version} = ($self->{args}->{VERSION} ||
                       parse_version($self->{args}->{VERSION_FROM}) ) 
     or warn "Could not extract version information";
-  $self->make_html() unless (-d 'blib/html' and not $force);
+  unless ($self->{opts}->{no_html}) {
+    $self->make_html() unless (-d 'blib/html' and not $force);
+  }
   $dist = $self->make_dist();
   $self->bundle() if ($dist =~ /^(Bundle|Task)/i);
   $self->make_ppd($dist);
@@ -629,13 +634,23 @@ sub guess_abstract {
   }
   if (my $try = $args->{NAME}) {
     $try =~ s{-}{::}g;
-    $result = mod_search($try);
-    return $result->{mod_abs} if ($result and defined $result->{mod_abs});
+    my $mod_search;
+    unless ($mod_search = $self->{mod_search}) {
+      $mod_search = mod_search($try);
+      $self->{mod_search} = $mod_search if $mod_search;
+    }
+    return $mod_search->{mod_abs}
+      if ($mod_search and defined $mod_search->{mod_abs});
   }
   if (my $try = $args->{DISTNAME}) {
     $try =~ s{::}{-}g;
-    $result = dist_search($try);
-    return $result->{dist_abs} if ($result and defined $result->{dist_abs});
+    my $dist_search;
+    unless ($dist_search = $self->{dist_search}) {
+      $dist_search = dist_search($try);
+      $self->{dist_search} = $dist_search if $dist_search;
+    }
+    return $dist_search->{dist_abs}
+      if ($dist_search and defined $dist_search->{dist_abs});
   }
   return;
 }
@@ -748,13 +763,23 @@ sub guess_author {
   my $results;
   if (my $try = $args->{NAME}) {
     $try =~ s{-}{::}g;
-    $results = mod_search($try);
-    return $results->{author} if ($results and defined $results->{author});
+    my $mod_search;
+    unless ($mod_search = $self->{mod_search}) {
+      $mod_search = mod_search($try);
+      $self->{mod_search} = $mod_search if $mod_search;
+    }
+    return $mod_search->{author}
+      if ($mod_search and defined $mod_search->{author});
   }
   if (my $try = $args->{DISTNAME}) {
     $try =~ s{::}{-}g;
-    $results = dist_search($try);
-    return $results->{author} if ($results and defined $results->{author});
+    my $dist_search;
+    unless ($dist_search = $self->{dist_search}) {
+      $dist_search = dist_search($try);
+      $self->{dist_search} = $dist_search if $dist_search;
+    }
+    return $dist_search->{author}
+      if ($dist_search and defined $dist_search->{author});
   }
   return;
 }
@@ -820,7 +845,7 @@ sub make_dist {
   my $args = $self->{args};
   my $has = $self->{has};
   my ($tar, $gzip, $zip) = @$has{qw(tar gzip zip)};
-  my $force_zip = $self->{opts}->{zip};
+  my $force_zip = $self->{opts}->{zip_archive};
   my $binary = $self->{opts}->{binary};
   my $name;
   if ($binary and $binary =~ /$ext/) {
@@ -1013,7 +1038,23 @@ sub make_ppd {
       $d->{INSTALL}->{SCRIPT} = $script;
     }
   }
-  
+
+  my ($dist_search, $mods);
+  unless ($dist_search = $self->{dist_search}) {
+    $dist_search = dist_search($name);
+    $self->{dist_search} = $dist_search if $dist_search;
+  }
+  $mods = $dist_search->{mods} if $dist_search;
+  if ($mods and (ref($mods) eq 'ARRAY')) {
+    foreach my $mod (@$mods) {
+      my $mod_name = $mod->{mod_name};
+      next unless $mod_name;
+      my $mod_vers = $mod->{mod_vers};
+      $mod_name .= '::' unless ($mod_name =~ /::/);
+      push @{$d->{PROVIDE}}, {NAME => $mod_name, VERSION => $mod_vers};
+    }
+  }
+
   my $mod_ref;
   foreach my $dp (keys %{$args->{PREREQ_PM}}) {
     next if ($dp eq 'perl' or is_core($dp));
@@ -1052,19 +1093,19 @@ sub print_ppd {
   print $fh <<"END";
 <?xml version="1.0" encoding="UTF-8"?>
 <SOFTPKG NAME=\"$d->{SOFTPKG}->{NAME}\" VERSION=\"$d->{SOFTPKG}->{VERSION}\">
-\t<TITLE>$title</TITLE>
-\t<ABSTRACT>$abstract</ABSTRACT>
-\t<AUTHOR>$author</AUTHOR>
-\t<IMPLEMENTATION>
+  <TITLE>$title</TITLE>
+  <ABSTRACT>$abstract</ABSTRACT>
+  <AUTHOR>$author</AUTHOR>
+  <IMPLEMENTATION>
 END
   
   foreach (keys %{$d->{PREREQ_PM}}) {
     print $fh 
-      qq{\t\t<DEPENDENCY NAME="$_" VERSION="$d->{PREREQ_PM}->{$_}" />\n};
+      qq{    <DEPENDENCY NAME="$_" VERSION="$d->{PREREQ_PM}->{$_}" />\n};
   }
   foreach (qw(OS ARCHITECTURE)) {
     next unless $d->{$_}->{NAME};
-    print $fh qq{\t\t<$_ NAME="$d->{$_}->{NAME}" />\n};
+    print $fh qq{    <$_ NAME="$d->{$_}->{NAME}" />\n};
   }
   
   if (my $script = $d->{INSTALL}->{SCRIPT}) {
@@ -1075,12 +1116,27 @@ END
     if (my $href = $d->{INSTALL}->{HREF}) {
       $install .= qq{ HREF="$href"};
     }
-    print $fh qq{\t\t<$install>$script</INSTALL>\n};
+    print $fh qq{    <$install>$script</INSTALL>\n};
   }
   
-  print $fh qq{\t\t<CODEBASE HREF="$d->{CODEBASE}->{HREF}" />\n};
+  print $fh qq{    <CODEBASE HREF="$d->{CODEBASE}->{HREF}" />\n};
+
+  my $provide = $d->{PROVIDE};
+  unless ($self->{opts}->{no_ppm4}) {
+    if ($provide and (ref($provide) eq 'ARRAY')) {
+      foreach my $mod(@$provide) {
+	my $string = qq{    <PROVIDE NAME="$mod->{NAME}"};
+	if ($mod->{VERSION}) {
+	  $string .= qq{ VERSION="$mod->{VERSION}"};
+	}
+	$string .= qq{ />\n};
+	print $fh $string;
+      }
+    }
+  }
   
-  print $fh qq{\t</IMPLEMENTATION>\n</SOFTPKG>\n};
+  print $fh qq{  </IMPLEMENTATION>\n};
+  print $fh qq{</SOFTPKG>\n};
   $fh->close;
   $self->{codebase} = $d->{CODEBASE}->{HREF};
 }
@@ -1113,10 +1169,20 @@ in the current directory:
 END
   close $fh;
 
+  my $ppd_zip = $ppd . '.copy';
+  open(my $rfh, '<', $ppd) or die "Cannot open $ppd: $!";
+  open(my $wfh, '>', $ppd_zip) or die "Cannot open $ppd_zip: $!";
+  while (my $line = <$rfh>) {
+    $line =~ s{HREF=\"(http|ftp)://.*/([^/]+)\"}{HREF="$2"};
+    print $wfh $line;
+  }
+  close($rfh);
+  close($wfh);
+
   my $zip = $self->{has}->{zip};
   my $copy = $local ? File::Spec::Unix->catfile($path, $archive) : $archive;
   if ($zip eq 'Archive::Zip') {
-      my %contents = ($ppd => $ppd,
+      my %contents = ($ppd_zip => $ppd,
                       $archive => $copy,
                       $readme => 'README');
       my $arc = Archive::Zip->new();
@@ -1143,7 +1209,9 @@ END
           rmtree($path, 1, 1) or warn "Cannot rmtree $path: $!";
       }
   }
+  $self->{zip} = $zipdist;
   unlink $readme;
+  unlink $ppd_zip;
 }
 
 sub make_cpan {
@@ -1174,13 +1242,21 @@ sub make_cpan {
 
 sub upload_ppm {
   my $self = shift;
-  my ($ppd, $archive) = ($self->{ppd}, $self->{archive});
+  my ($ppd, $archive, $zip) = ($self->{ppd}, $self->{archive}, $self->{zip});
   my $upload = $self->{opts}->{upload};
   my $ppd_loc = $upload->{ppd};
+  my $zip_loc = $upload->{zip};
   my $ar_loc = $self->{opts}->{arch_sub} ?
     $self->{ARCHITECTURE} : $upload->{ar} || $ppd_loc;
-  if (not File::Spec->file_name_is_absolute($ar_loc)) {
-    ($ar_loc = File::Spec->catdir($ppd_loc, $ar_loc)) =~ s!\\!/!g;
+  if (defined $ar_loc) {
+    if (not File::Spec->file_name_is_absolute($ar_loc)) {
+      ($ar_loc = File::Spec->catdir($ppd_loc, $ar_loc)) =~ s!\\!/!g;
+    }
+  }
+  if (defined $zip_loc) {
+    if (not File::Spec->file_name_is_absolute($zip_loc)) {
+      ($zip_loc = File::Spec->catdir($ppd_loc, $zip_loc)) =~ s!\\!/!g;
+    }
   }
 
   if (my $host = $upload->{host}) {
@@ -1201,6 +1277,12 @@ sub upload_ppm {
     $ftp->binary;
     $ftp->put($archive)
       or die "Cannot upload $archive: ", $ftp->message;
+    if ($self->{opts}->{zipdist} and -f $zip) {
+      $ftp->cwd($zip_loc)
+	or die "cwd to $zip_loc failed: ", $ftp->message;
+      $ftp->put($zip)
+	or die "Cannot upload $zip: ", $ftp->message;
+    }
     $ftp->quit;
   }
   else {
@@ -1211,6 +1293,13 @@ sub upload_ppm {
     }
     copy($archive, "$ar_loc/$archive") 
       or die "Cannot copy $archive to $ar_loc: $!";
+    if ($self->{opts}->{zipdist} and -f $zip) {
+      unless (-d $zip_loc) {
+        mkdir $zip_loc or die "Cannot mkdir $zip_loc: $!";
+      }
+      copy($zip, "$zip_loc/$zip") 
+	or die "Cannot copy $zip to $zip_loc: $!";
+    }
   }
 }
 
@@ -1281,7 +1370,7 @@ Valid options that may be specified within the
 configuration file are those of PPM::Make, described below. 
 For the I<program> and I<upload> options (which take hash references),
 the keys (make, zip, unzip, tar, gzip),
-or (ppd, ar, host, user, passwd), respectively,
+or (ppd, ar, zip, host, user, passwd), respectively,
 should be specified. For binary options, a value
 of I<yes|on> in the configuration file will be interpreted
 as true, while I<no|off> will be interpreted as false.
@@ -1292,12 +1381,20 @@ The available options accepted by the I<new> constructor are
 
 =over
 
-=item no_cfg => 1
+=item no_cfg =E<gt> 1
 
 If specified, do not attempt to read a F<.ppmcfg> configuration
 file.
 
-=item dist => value
+=item no_html =E<gt> 1
+
+If specified, do not not build the html documentation.
+
+=item no_ppm4 =E<gt> 1
+
+If specified, do not add ppm4 extensions to the ppd file.
+
+=item dist =E<gt> value
 
 If I<dist> is not specified, it will be assumed that one
 is working inside an already unpacked source directory,
@@ -1307,26 +1404,26 @@ distribution to fetch and build, or as a module name,
 in which case I<CPAN.pm> will be used to infer the
 corresponding distribution to grab.
 
-=item no_case => boolean
+=item no_case =E<gt> boolean
 
 If I<no_case> is specified, a case-insensitive search
 of a module name will be performed.
 
-=item binary => value
+=item binary =E<gt> value
 
 The value of I<binary> is used in the I<BINARY_LOCATION>
 attribute passed to C<perl Makefile.PL>, and arises in
 setting the I<HREF> attribute of the I<CODEBASE> field
 in the ppd file.
 
-=item arch_sub => boolean
+=item arch_sub =E<gt> boolean
 
 Setting this option will insert the value of C<$Config{archname}>
 (or the value of the I<arch> option, if given)
 as a relative subdirectory in the I<HREF> attribute of the 
 I<CODEBASE> field in the ppd file.
 
-=item script => value
+=item script =E<gt> value
 
 The value of I<script> is used in the I<PPM_INSTALL_SCRIPT>
 attribute passed to C<perl Makefile.PL>, and arises in
@@ -1335,111 +1432,111 @@ If this begins with I<http://> or I<ftp://>, so that the
 script is assumed external, this will be
 used as the I<HREF> attribute for I<INSTALL>.
 
-=item exec => value
+=item exec =E<gt> value
 
 The value of I<exec> is used in the I<PPM_INSTALL_EXEC>
 attribute passed to C<perl Makefile.PL>, and arises in
 setting the I<EXEC> attribute of the I<INSTALL> field
 in the ppd file. 
 
-=item  add => \@files
+=item  add =E<gt> \@files
 
 The specified array reference contains a list of files
 outside of the F<blib> directory to be added to the archive. 
 
-=item zip => boolean
+=item zip_archive =E<gt> boolean
 
 By default, a I<.tar.gz> distribution will be built, if possible. 
 Giving I<zip> a true value forces a I<.zip> distribution to be made.
 
-=item force => boolean
+=item force =E<gt> boolean
 
 If a F<blib/> directory is detected, it will be assumed that
 the distribution has already been made. Setting I<force> to
 be a true value forces remaking the distribution.
 
-=item ignore => boolean
+=item ignore =E<gt> boolean
 
 If when building and testing a distribution, failure of any
 supplied tests will be treated as a fatal error. Setting
 I<ignore> to a true value causes failed tests to just
 issue a warning.
 
-=item os => value
+=item os =E<gt> value
 
 If this option specified, the value, if present, will be used instead 
 of the default for the I<NAME> attribute of the I<OS> field of the ppd 
 file. If a value of an empty string is given, the I<OS> field will not 
 be included in the  ppd file.
 
-=item arch => value
+=item arch =E<gt> value
 
 If this option is specified, the value, if present, will be used instead 
 of the default for the I<NAME> attribute of the I<ARCHITECTURE> field of 
 the ppd file. If a value of an empty string is given, the 
 I<ARCHITECTURE> field will not be included in the ppd file.
 
-=item remove => boolean
+=item remove =E<gt> boolean
 
 If specified, the directory used to build the ppm distribution
 (with the I<dist> option) will be removed after a successful install.
 
-=item zipdist => boolean
+=item zipdist =E<gt> boolean
 
 If enabled, this option will create a zip file C<archive.zip>
 consisting of the C<archive.ppd> ppd file and the C<archive.tar.gz>
 archive file, suitable for local installations. A short README
 file giving the command for installation is also included.
 
-=item cpan => boolean
+=item cpan =E<gt> boolean
 
 If specified, a distribution will be made using C<make dist>
 which will include the I<ppd> and I<archive> file.
 
-=item program => { p1 => '/path/to/q1', p2 => '/path/to/q2', ...}
+=item program =E<gt> { p1 =E<gt> '/path/to/q1', p2 =E<gt> '/path/to/q2', ...}
 
 This option specifies that C</path/to/q1> should be used
 for program C<p1>, etc., rather than the ones PPM::Make finds. The
 programs specified can be one of C<tar>, C<gzip>, C<zip>, C<unzip>,
 or C<make>.
 
-=item no_as => boolean
+=item no_as =E<gt> boolean
 
 Beginning with Perl-5.8, Activestate adds the Perl version number to
 the NAME of the ARCHITECTURE tag in the ppd file. This option
 will make a ppd file I<without> this practice.
 
-=item vs => boolean
+=item vs =E<gt> boolean
 
 This option, if enabled, will add a version string 
 (based on the VERSION reported in the ppd file) to the 
 ppd and archive filenames.
 
-=item vsr => boolean
+=item vsr =E<gt> boolean
 
 This option, if enabled, will add a version string 
 (based on the VERSION reported in the ppd file) to the 
 archive filename.
 
-=item vsp => boolean
+=item vsp =E<gt> boolean
 
 This option, if enabled, will add a version string 
 (based on the VERSION reported in the ppd file) to the 
 ppd filename.
 
-=item upload => {key1 => val1, key2 => val2, ...}
+=item upload =E<gt> {key1 =E<gt> val1, key2 =E<gt> val2, ...}
 
 If given, this option will copy the ppd and archive files
 to the specified locations. The available options are
 
 =over
 
-=item ppd => $path_to_ppd_files
+=item ppd =E<gt> $path_to_ppd_files
 
 This is the location where the ppd file should be placed,
 and must be given as an absolute pathname.
 
-=item ar => $path_to_archive_files
+=item ar =E<gt> $path_to_archive_files
 
 This is the location where the archive file should be placed.
 This may either be an absolute pathname or a relative one,
@@ -1449,17 +1546,27 @@ is specified, then this defaults, first of all, to the
 value of I<arch_sub>, if given, or else to the value
 of I<ppd>.
 
-=item host => $hostname
+=item zip =E<gt> $path_to_zip_file
+
+This is the location where the zipped file created with the
+I<--zipdist> options should be placed.
+This may either be an absolute pathname or a relative one,
+in which case it is interpreted to be relative to that
+specified by I<ppd>. If this is not given, but I<ppd>
+is specified, this will default to the value of I<ppd>.
+
+
+=item host =E<gt> $hostname
 
 If specified, an ftp transfer to the specified host is
 done, with I<ppd> and I<ar> as described above.
 
-=item user => $username
+=item user =E<gt> $username
 
 This specifies the user name to login as when transferring
 via ftp.
 
-=item passwd => $passwd
+=item passwd =E<gt> $passwd
 
 This is the associated password to use for I<user>
 
@@ -1581,7 +1688,7 @@ made in the module.
 =head1 COPYRIGHT
 
 This program is copyright, 2003, 2006 
-by Randy Kobes <r.kobes@uwinnipeg.ca>.
+by Randy Kobes E<gt>r.kobes@uwinnipeg.caE<lt>.
 It is distributed under the same terms as Perl itself.
 
 =head1 SEE ALSO

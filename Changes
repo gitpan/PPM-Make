@@ -1,5 +1,30 @@
 Revision history for Perl extension PPM::Make.
 
+0.83 Fri, Sep 1, 2006
+
+  - use better cross-platform method to guess if a module
+    is installed as a core module (reported by Jeff McCarrell)
+  - introduce no_html option in PPM::Make (--no-html in make_ppm)
+    to disable building of html docs, as some platforms (eg, linux)
+    may not have an installhtmldir specified in Perl's Config
+    (reported by Jeff McCarrell)
+  - introduce --no-cfg as an alias to --no_cfg in make_ppm
+  - allow zipped distributions made with the --zipdist option
+    to be uploaded to a specified location, just as is done
+    with the ppd and tar.gz files
+  - in making up a ppd file, fetch either from the remote
+    soap server or from CPAN.pm a list of modules for the
+    given distribution, and use that to populate PROVIDE
+    elements in the ppd file (introduced in ppm4). This can
+    be disabled by using the no_pp,4 option in PPM::Make,
+    or the --no-ppm4 switch in make_ppm
+  - INCOMPATIBLE change: in PPM::Make, change the zip option
+    to zip_archive, to enable creation of .zip archives,
+    rather than .tar.gz ones.
+  - Add PPM::Make::RepositorySummary to make ppm summary files
+    (summary.ppm, searchsummary.ppm, package.lst, package.xml)
+    for a repository, and add a rep_summary script as an interface
+
 0.79 Mon, Aug 21, 2006
   - fix bug in xml_encode which led to replacing the '&'
     in entitities that were already encoded, such as '&lt;'.

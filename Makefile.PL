@@ -243,7 +243,7 @@ WARN
   }
 }
 
-my @exe_files = qw(make_ppm ppm_install);
+my @exe_files = map{"bin/$_"} qw(make_ppm ppm_install rep_summary);
 #push @exe_files, 'tk-ppm' if WIN32;
 
 my $eu_version = $ExtUtils::MakeMaker::VERSION;

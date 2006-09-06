@@ -9,7 +9,7 @@ use Test;
 use strict;
 use Cwd;
 my $cwd = getcwd;
-BEGIN { plan tests => 48 };
+BEGIN { plan tests => 56 };
 use PPM::Make;
 use Config;
 use File::Path;
@@ -27,6 +27,7 @@ my $name = 'PPM-Make';
 my $ppd = $name . '.ppd';
 my $tgz = $name . '.tar.gz';
 $ppm->make_ppm();
+
 for ($ppd, $tgz, "t/$ppd", "t/$tgz") {
   if (-e $_) {
     ok(1);
@@ -51,6 +52,18 @@ if (length($^V) && ord(substr($^V, 1)) >= 8) {
 }
 ok($d->{ARCHITECTURE}->{NAME}, $arch);
 ok($d->{CODEBASE}->{HREF}, $tgz); 
+
+my $provides = $d->{PROVIDE};
+ok($provides);
+ok(ref($provides) eq 'ARRAY');
+my $has;
+foreach my $entry (@$provides) {
+  $has->{$entry->{NAME}} = $entry->{VERSION};
+}
+foreach my $mod(qw(PPM::Make PPM::Make::Util PPM::Make::Install)) {
+  ok(defined $has->{$mod});
+  ok($has->{$mod} > 0);
+}
 
 my $is_Win32 = ($d->{OS}->{NAME} =~ /Win32/i); 
 
@@ -91,7 +104,7 @@ $arch = 'c-wren';
 my $url = 'http://www.disney.com/ppmpackages/';
 my $script = 'README';
 my $exec = 'notepad.exe';
-my @args = ($ppm->{has}->{perl}, '-Mblib', 'make_ppm',
+my @args = ($ppm->{has}->{perl}, '-Mblib', 'bin/make_ppm',
         '-n', '-a', $arch, '-b', $url,
         '-s', $script, '-e', $exec, '--no_cfg');
 system(@args) == 0 or die "system @args failed: $?";
