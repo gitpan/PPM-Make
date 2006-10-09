@@ -1,12 +1,14 @@
 package PPM::Make::Install;
 use strict;
+use warnings;
 use PPM::Make;
+use File::Path;
 use base qw(PPM::Make);
 use PPM::Make::Util qw(:all);
 use Config;
 use Cwd;
 our ($VERSION);
-$VERSION = '0.79';
+$VERSION = '0.87';
 
 sub new {
   my ($class, %opts) = @_;
@@ -165,35 +167,35 @@ how the ppm package is built. Available options are
 
 =over
 
-=item ignore => 1
+=item ignore =E<gt> 1
 
 By default, C<PPM::Make::Install>, when building the distribution,
 will die if all tests do not pass. Turning on this option
 instructs the module to ignore any test failures.
 
-=item remove => 1
+=item remove =E<gt> 1
 
 If specified, the directory used to build the ppm distribution
 will be removed after a successful install.
 
-=item force => 1
+=item force =E<gt> 1
 
 By default, if C<PPM::Make::Install> detects a F<blib/> directory,
 it will assume the distribution has already been made, and
 will not remake it. This option forces remaking the distribution.
 
-=item upgrade => 1
+=item upgrade =E<gt> 1
 
 Will do an upgrade of the specified package, if applicable.
 
-=item dist => value
+=item dist =E<gt> value
 
 A value for I<dist> will be interpreted either as a CPAN-like source
 distribution to fetch and build, or as a module name,
 in which case I<CPAN.pm> will be used to infer the
 corresponding distribution to grab.
 
-=item program => { p1 => '/path/to/q1', p2 => '/path/to/q2', ...}
+=item program =E<gt> { p1 =E<gt> '/path/to/q1', p2 =E<gt> '/path/to/q2', ...}
 
 This option specifies that C</path/to/q1> should be used
 for program C<p1>, etc., rather than the ones PPM::Make finds. The

@@ -1,8 +1,9 @@
 package PPM::Make;
 use strict;
-#use warnings;
+use warnings;
+use PPM::Make::Config qw(:all);
 use PPM::Make::Util qw(:all);
-use Config::IniFiles;
+use PPM::Make::Meta;
 use Cwd;
 use Pod::Find qw(pod_find contains_pod);
 use File::Basename;
@@ -16,10 +17,9 @@ require File::Spec;
 use Pod::Html;
 use Safe;
 use File::HomeDir;
-use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.83';
+$VERSION = '0.87';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -66,172 +66,6 @@ sub new {
   bless $self, $class;
 }
 
-sub check_opts {
-  my %opts = @_;
-  my %legal = 
-    map {$_ => 1} qw(force ignore binary zip_archive remove program cpan
-                     dist script exec os arch arch_sub add no_as vs upload
-                     no_case no_cfg vsr vsp zipdist no_ppm4 no_html);
-  foreach (keys %opts) {
-    next if $legal{$_};
-    warn "Unknown option '$_'\n";
-    return;
-  }
-
-  if (defined $opts{add}) {
-    unless (ref($opts{add}) eq 'ARRAY') {
-      warn "Please supply an ARRAY reference to 'add'";
-      return;
-    }
-  }
-
-  if (defined $opts{program} and my $progs = $opts{program}) {
-    unless (ref($progs) eq 'HASH') {
-      warn "Please supply a HASH reference to 'program'";
-      return;
-    }
-    my %ok = map {$_ => 1} qw(zip unzip tar gzip make);
-    foreach (keys %{$progs}) {
-      next if $ok{$_};
-      warn "Unknown program option '$_'\n";
-      return;
-    }
-  }
-  
-  if (defined $opts{upload} and my $upload = $opts{upload}) {
-    unless (ref($upload) eq 'HASH') {
-      warn "Please supply an HASH reference to 'upload'";
-      return;
-    }
-    my %ok = map {$_ => 1} qw(ppd ar host user passwd zip);
-    foreach (keys %{$upload}) {
-      next if $ok{$_};
-      warn "Unknown upload option '$_'\n";
-      return;
-    }
-  }
-  return 1;
-}
-
-sub arch_and_os {
-  my ($opt_arch, $opt_os, $opt_noas) = @_;
-
-  my ($arch, $os);
-  if (defined $opt_arch) {
-    $arch = ($opt_arch eq "") ? undef : $opt_arch;
-  }
-  else {
-    $arch = $Config{archname};
-    unless ($opt_noas) {
-      if (length($^V) && ord(substr($^V, 1)) >= 8) {
-	$arch .= sprintf("-%d.%d", ord($^V), ord(substr($^V, 1)));
-      }
-    }
-  }
-  if (defined $opt_os) {
-    $os = ($opt_os eq "") ? undef : $opt_os;
-  }
-  else {
-    $os = $Config{osname};
-  }
-  return ($arch, $os);
-}
-
-sub get_cfg_file {
-  if (defined $ENV{PPM_CFG} and my $env = $ENV{PPM_CFG}) {
-    if (-e $env) {
-      return $env;
-    }
-    else {
-      warn qq{Cannot find '$env' from \$ENV{PPM_CFG}};
-      return;
-    }
-  }
-  if (my $home = File::HomeDir->my_home) {
-    my $candidate = File::Spec->catfile($home, '.ppmcfg');
-    return $candidate if (-e $candidate);
-  }
-  if (WIN32) {
-    my $candidate = '/.ppmcfg';
-    return $candidate if (-e $candidate);
-  }
-  return;
-}
-
-sub read_cfg {
-  my ($file, $arch) = @_;
-  my $default = 'default';
-  my $cfg = Config::IniFiles->new(-file => $file, -default => $default);
-  my @p;
-  push @p, $cfg->Parameters($default) if ($cfg->SectionExists($default));
-  push @p, $cfg->Parameters($arch) if ($cfg->SectionExists($arch));
-  unless (@p > 1) {
-    warn "No default or section for $arch found";
-    return;
-  }
-  
-  my $on = qr!^(on|yes)$!;
-  my $off = qr!^(off|no)$!;
-  my %legal_progs = map {$_ => 1} qw(tar gzip make perl);
-  my %legal_upload = map {$_ => 1} qw(ppd ar host user passwd zip);
-  my (%cfg, %programs, %upload);
-  foreach (@p) {
-    my $val = $cfg->val($arch, $_);
-    $val = 1 if ($val =~ /$on/i);
-    if ($val =~ /$off/i) {
-      delete $cfg{$_};
-      next;
-    }
-    if ($_ eq 'add') {
-      $cfg{$_} = [split ' ', $val];
-      next;
-    }
-    if ($legal_progs{$_}) {
-      $programs{$_} = $val;
-    }
-    elsif ($legal_upload{$_}) {
-      $upload{$_} = $val;
-    }
-    else {
-      $cfg{$_} = $val;
-    }
-  }
-  $cfg{program} = \%programs if %programs;
-  $cfg{upload} = \%upload if %upload;
-  return check_opts(%cfg) ? %cfg : undef;
-}
-
-# merge two hashes, assuming the second one takes precedence 
-# over the first in the case of duplicate keys
-sub merge_opts {
-  my ($h1, $h2) = @_;
-  my %opts = (%{$h1}, %{$h2});
-  if (defined $h1->{add} or defined $h2->{add}) {
-    my @a;
-    push @a, @{$h1->{add}} if $h1->{add};
-    push @a, @{$h2->{add}} if $h2->{add};
-    my %add = map {$_ => 1} @a;
-    $opts{add} = [keys %add];
-  }
-  for (qw(program upload)) {
-    next unless (defined $h1->{$_} or defined $h2->{$_});
-    my %h = ();
-    if (defined $h1->{$_}) {
-      if (defined $h2->{$_}) {
-	%h = (%{$h1->{$_}}, %{$h2->{$_}});
-      }
-      else {
-	%h = %{$h1->{$_}};
-      }
-    }
-    else {
-      %h = %{$h2->{$_}};     
-    }
-    $opts{$_} = \%h;
-  }
-  return \%opts;
-}
-
 sub make_ppm {
   my $self = shift;
   die 'No software available to make a zip archive'
@@ -265,33 +99,35 @@ sub make_ppm {
   $self->build_dist() 
     unless (-d 'blib' and (-f 'Makefile' or ($mb and -f 'Build' and -d '_build')) 
             and not $force);
-  $self->parse_yaml if (-e 'META.yml');
-  if ($mb and -d '_build') {
-    $self->parse_build();
+
+  my $meta = PPM::Make::Meta->new(dir => $self->{cwd});
+  die qq{Creating PPM::Make::Meta object failed}
+    unless ($meta and (ref($meta) eq 'PPM::Make::Meta'));
+  $meta->meta();
+  foreach my $key( keys %{$meta->{info}}) {
+    next unless defined $meta->{info}->{$key};
+    $self->{args}->{$key} ||= $meta->{info}->{$key};
   }
-  else {
-#    $self->parse_makepl();
-    $self->parse_make()
-        unless ($self->{args}->{NAME} and $self->{args}->{AUTHOR});
+  for my $search_info(qw(dist_search mod_search)) {
+    next unless defined $meta->{$search_info};
+    $self->{$search_info} = $meta->{$search_info};
   }
-  $self->abstract();
-  $self->author();
-  $self->{version} = ($self->{args}->{VERSION} ||
-                      parse_version($self->{args}->{VERSION_FROM}) ) 
+
+  $self->{version} = $self->{args}->{VERSION}
     or warn "Could not extract version information";
   unless ($self->{opts}->{no_html}) {
     $self->make_html() unless (-d 'blib/html' and not $force);
   }
   $dist = $self->make_dist();
-  $self->bundle() if ($dist =~ /^(Bundle|Task)/i);
   $self->make_ppd($dist);
 #  if ($self->{opts}->{install}) {
 #    die 'Must have the ppm utility to install' unless HAS_PPM;
 #    $self->ppm_install();
 #  }
   $self->make_cpan() if $self->{opts}->{cpan};
-  $self->make_zipdist($dist) if $self->{opts}->{zipdist};
-  if (defined $self->{opts}->{upload}) {
+  $self->make_zipdist($dist) 
+    if ($self->{opts}->{zipdist} and not $self->{opts}->{no_upload});
+  if (defined $self->{opts}->{upload} and not $self->{opts}->{no_upload}) {
     die 'Please specify the location to place the ppd file'
       unless $self->{opts}->{upload}->{ppd}; 
     $self->upload_ppm();
@@ -430,358 +266,16 @@ sub build_dist {
   }
   print "@args\n";
   system(@args) == 0 or die "@args failed: $?";
- 
-  @args = $mb ? ($perl, $build, 'test') : ($make, 'test');
-  print "@args\n";
-  unless (system(@args) == 0) {
-    die "@args failed: $?" unless $self->{opts}->{ignore};
-    warn "@args failed: $?";
+
+  unless ($self->{opts}->{skip}) {
+    @args = $mb ? ($perl, $build, 'test') : ($make, 'test');
+    print "@args\n";
+    unless (system(@args) == 0) {
+      die "@args failed: $?" unless $self->{opts}->{ignore};
+      warn "@args failed: $?";
+    }
   }
   return 1;
-}
-
-sub parse_build {
-  my $self = shift;
-  my $bp = '_build/build_params';
-#  open(my $fh, $bp) or die "Couldn't open $bp: $!";
-#  my @lines = <$fh>;
-#  close $fh;
-#  my $content = join "\n", @lines;
-#  my $c = new Safe();
-#  my $r = $c->reval($content);
-#  if ($@) {
-#    warn "Eval of $bp failed: $@";
-#    return;
-#  }
-  my $file = $self->{cwd} . '/_build/build_params';
-  my $r;
-  unless ($r = do $file) {
-    die "Can't parse $file: $@" if $@;
-    die "Can't do $file: $!" unless defined $r;
-    die "Can't run $file" unless $r;
-  }
-  
-  my $props = $r->[2];
-  my %r = ( NAME => $props->{module_name},
-            DISTNAME => $props->{dist_name},
-            VERSION => $props->{dist_version},
-            VERSION_FROM => $props->{dist_version_from},
-            PREREQ_PM => $props->{requires},
-            AUTHOR => $props->{dist_author},
-            ABSTRACT => $props->{dist_abstract},
-          );
-  foreach (keys %r) {
-      next unless $r{$_};
-      $self->{args}->{$_} ||= $r{$_};
-  }
-  return 1;
-}
-
-sub parse_yaml {
-  my $self = shift;
-  my $props;
-  eval {$props = LoadFile('META.yml')};
-  return if $@;
-  my $author = ($props->{author} and ref($props->{author}) eq 'ARRAY') ?
-    $props->{author}->[0] : $props->{author};
-  my %r = ( NAME => $props->{name},
-            DISTNAME => $props->{distname},
-            VERSION => $props->{version},
-            VERSION_FROM => $props->{version_from},
-            PREREQ_PM => $props->{requires},
-            AUTHOR => $author,
-            ABSTRACT => $props->{abstract},
-          );
-  foreach (keys %r) {
-    next unless $r{$_};
-    $self->{args}->{$_} ||= $r{$_};
-  }
-  return 1;
-}
-
-sub parse_makepl {
-  my $self = shift;
-  open(my $fh, 'Makefile.PL') or die "Couldn't open Makefile.PL: $!";
-  my @lines = <$fh>;
-  close $fh;
-  my $makeargs;
-  my $content = join "\n", @lines;
-  $content =~ s!\r!!g;
-  $content =~ m!WriteMakefile(\s*\(.*?\bNAME\b.*?\))\s*;!s;
-  unless ($makeargs = $1) {
-    warn "Couldn't extract WriteMakefile args";
-    return;
-  }
-
-  my $c = new Safe();
-  my %r = $c->reval($makeargs);
-  if ($@) {
-    warn "Eval of Makefile.PL failed: $@";
-    return;
-  }
-  unless ($r{NAME}) {
-    warn "Cannot determine NAME in Makefile.PL";
-    return;
-  }
-  foreach (keys %r) {
-      next unless $r{$_};
-      $self->{args}->{$_} ||= $r{$_};
-  }
-  return 1;
-}
-
-sub parse_make {
-  my $self = shift;
-  my $flag = 0;
-  my @wanted = qw(NAME DISTNAME ABSTRACT ABSTRACT_FROM AUTHOR 
-                  VERSION VERSION_FROM PREREQ_PM);
-  my $re = join '|', @wanted;
-  my @lines;
-  open(my $fh, 'Makefile') or die "Couldn't open Makefile: $!";
-  while (<$fh>) {
-    if (not $flag and /MakeMaker Parameters/) {
-      $flag = 1;
-      next;
-    }
-    next unless $flag;
-    last if /MakeMaker post_initialize/;
-    next unless /$re/;
-    chomp;
-    s/^#*\s+// or next;
-    push @lines, $_;
-  }
-  close($fh);
-  my $make = join ',', @lines;
-  $make = '(' . $make . ')';
-  my $c = new Safe();
-  my %r = $c->reval($make);
-  die "Eval of Makefile failed: $@" if ($@);
-  die 'Cannot determine NAME in Makefile' unless $r{NAME};
-  for (@wanted) {
-    next unless $r{$_};
-    $self->{args}->{$_} ||= $r{$_};
-  }
-  return 1;
-}
-
-sub write_makefile {
-  my $self = shift;
-  my $r;
-  my $cwd = $self->{cwd};
-  my $file = 'Makefile.PL';
- MAKE: {
-    local @ARGV;
-    if (my $makepl_arg = $CPAN::Config->{makepl_arg}) {
-      push @ARGV, (split ' ', $makepl_arg);
-    }
-    unless ($r = do "$cwd/$file") {
-      die "Can't parse $file: $@" if $@;
-      die "Can't do $file: $!" unless defined $r;
-      die "Can't run $file" unless $r;
-    }
-  }
-  my @wanted = qw(NAME DISTNAME ABSTRACT ABSTRACT_FROM AUTHOR 
-                  VERSION VERSION_FROM PREREQ_PM);
-  my %wanted;
-  foreach (@wanted) {
-    next unless defined $r->{$_};
-    $wanted{$_} = $r->{$_};
-  }
-  $self->{args} = $r;
-  return 1;
-}
-
-sub abstract {
-  my $self = shift;
-  my $args = $self->{args};
-  unless ($args->{ABSTRACT}) {
-    if (my $abstract = $self->guess_abstract()) {
-      warn "Setting ABSTRACT to '$abstract'\n";
-      $self->{args}->{ABSTRACT} = $abstract;
-    }
-    else {
-      warn "Please check ABSTRACT in the ppd file\n";
-    }
-  }
-}
-
-sub guess_abstract {
-  my $self = shift;
-  my $args = $self->{args};
-  my $cwd = $self->{cwd};
-  my $result;
-  for my $guess(qw(ABSTRACT_FROM VERSION_FROM)) {
-    if (my $file = $args->{$guess}) {
-      print "Trying to get ABSTRACT from $file ...\n";
-      $result = parse_abstract($args->{NAME}, $file);
-      return $result if $result;
-    }
-  }
-  my ($hit, $guess);
-  for my $ext (qw(pm pod)) {
-    if ($args->{NAME} =~ /-|:/) {
-      ($guess = $args->{NAME}) =~ s!.*[-:](.*)!$1.$ext!;
-    }
-    else {
-      $guess = $args->{NAME} . ".$ext";
-    }
-    finddepth(sub{$_ eq $guess && ($hit = $File::Find::name) 
-		    && ($hit !~ m!blib/!)}, $cwd);
-    next unless (-f $hit);
-    print "Trying to get ABSTRACT from $hit ...\n";
-    $result = parse_abstract($args->{NAME}, $hit);
-    return $result if $result;
-  }
-  if (my $try = $args->{NAME}) {
-    $try =~ s{-}{::}g;
-    my $mod_search;
-    unless ($mod_search = $self->{mod_search}) {
-      $mod_search = mod_search($try);
-      $self->{mod_search} = $mod_search if $mod_search;
-    }
-    return $mod_search->{mod_abs}
-      if ($mod_search and defined $mod_search->{mod_abs});
-  }
-  if (my $try = $args->{DISTNAME}) {
-    $try =~ s{::}{-}g;
-    my $dist_search;
-    unless ($dist_search = $self->{dist_search}) {
-      $dist_search = dist_search($try);
-      $self->{dist_search} = $dist_search if $dist_search;
-    }
-    return $dist_search->{dist_abs}
-      if ($dist_search and defined $dist_search->{dist_abs});
-  }
-  return;
-}
-
-sub parse_abstract {
-  my ($package, $file) = @_;
-  my $basename = basename($file, qr/\.\w+$/);
-  (my $stripped = $basename) =~ s!\.\w+$!!;
-  (my $trans = $package) =~ s!-!::!g;
-  my $result;
-  my $inpod = 0;
-  open(my $fh, $file) or die "Couldn't open $file: $!";
-  while (<$fh>) {
-    $inpod = /^=(?!cut)/ ? 1 : /^=cut/ ? 0 : $inpod;
-    next if !$inpod;
-    chop;
-    next unless /^\s*($package|$basename|$stripped|$trans)\s+--*\s+(.*)/;
-    $result = $2;
-    last;
-  }
-  close($fh);
-  chomp($result);
-  return $result;
-}
-
-sub bundle {
-  my $self = shift;
-  my $args = $self->{args};
-  my $result = $self->guess_bundle();
-  if ($result and ref($result) eq 'ARRAY') {
-    warn "Extracting Bundle/Task info ...\n";
-    foreach my $mod(@$result) {
-      $args->{PREREQ_PM}->{$mod} = 0;
-    }
-  }
-  else {
-    warn "Please check prerequisites in the ppd file\n";
-  }
-}
-
-sub guess_bundle {
-  my $self = shift;
-  my $args = $self->{args};
-  my $cwd = $self->{cwd};
-  my $result;
-  for my $guess(qw(ABSTRACT_FROM VERSION_FROM)) {
-    if (my $file = $args->{$guess}) {
-      print "Trying to get Bundle/Task info from $file ...\n";
-      $result = parse_bundle($file);
-      return $result if $result;
-    }
-  }
-  my ($hit, $guess);
-  for my $ext (qw(pm pod)) {
-    if ($args->{NAME} =~ /-|:/) {
-      ($guess = $args->{NAME}) =~ s!.*[-:](.*)!$1.$ext!;
-    }
-    else {
-      $guess = $args->{NAME} . ".$ext";
-    }
-    finddepth(sub{$_ eq $guess && ($hit !~ m!blib/!)
-		    && ($hit = $File::Find::name) }, $cwd);
-    next unless (-f $hit);
-    print "Trying to get Bundle?Task info from $hit ...\n";
-    $result = parse_bundle($hit);
-    return $result if $result;
-  }
-  return;
-}
-
-sub parse_bundle {
-  my ($file) = @_;
-  my @result;
-  local $/ = "\n";
-  my $in_cont = 0;
-  open(my $fh, $file) or die "Couldn't open $file: $!";
-  while (<$fh>) {
-    $in_cont = m/^=(?!head1\s+(CONTENTS|DESCRIPTION))/ ? 0 :
-      m/^=head1\s+(CONTENTS|DESCRIPTION)/ ? 1 : $in_cont;
-    next unless $in_cont;
-    next if /^=/;
-    s/\#.*//;
-    next if /^\s+$/;
-    chomp;
-    my $result = (split " ", $_, 2)[0];
-    $result =~ s/^L<(.*?)>/$1/;
-    push @result, $result;
-  }
-  close $fh;
-  return (scalar(@result) > 0) ? \@result : undef;
-}
-
-sub author {
-  my $self = shift;
-  my $args = $self->{args};
-  unless ($args->{AUTHOR}) {
-    if (my $author = $self->guess_author()) {
-      $self->{args}->{AUTHOR} = $author;
-      warn qq{Setting AUTHOR to "$author"\n};
-    }
-    else {
-      warn "Please check AUTHOR in the ppd file\n";
-    }
-  }
-}
-
-sub guess_author {
-  my $self = shift;
-  my $args = $self->{args};
-  my $results;
-  if (my $try = $args->{NAME}) {
-    $try =~ s{-}{::}g;
-    my $mod_search;
-    unless ($mod_search = $self->{mod_search}) {
-      $mod_search = mod_search($try);
-      $self->{mod_search} = $mod_search if $mod_search;
-    }
-    return $mod_search->{author}
-      if ($mod_search and defined $mod_search->{author});
-  }
-  if (my $try = $args->{DISTNAME}) {
-    $try =~ s{::}{-}g;
-    my $dist_search;
-    unless ($dist_search = $self->{dist_search}) {
-      $dist_search = dist_search($try);
-      $self->{dist_search} = $dist_search if $dist_search;
-    }
-    return $dist_search->{author}
-      if ($dist_search and defined $dist_search->{author});
-  }
-  return;
 }
 
 sub make_html {
@@ -1005,7 +499,7 @@ sub make_ppd {
 
   (my $name = $dist) =~ s!$ext!!;
   if ($self->{opts}->{vsr} and not $self->{opts}->{vsp}) {
-     $name =~ s/-$self->{version}//;
+     $name =~ s/-$self->{version}// if $self->{version};
   }
   if ($self->{opts}->{vsp} and $name !~ m/-$self->{version}/) {
      $name .= "-$self->{version}";
@@ -1017,12 +511,14 @@ sub make_ppd {
   my $d;
   
   $d->{SOFTPKG}->{NAME} = $d->{TITLE} = $name;
-  $d->{SOFTPKG}->{VERSION} = cpan2ppd_version($self->{version});  
+  $d->{SOFTPKG}->{VERSION} = cpan2ppd_version($self->{version});
   $d->{OS}->{NAME} = $os if $os;
   $d->{ARCHITECTURE}->{NAME} = $arch if $arch;
   $d->{ABSTRACT} = $args->{ABSTRACT};
-  $d->{AUTHOR} = $args->{AUTHOR};
-  $d->{CODEBASE}->{HREF} = $binary || $dist;
+  $d->{AUTHOR} = (ref($args->{AUTHOR}) eq 'ARRAY') ?
+    (join ', ', @{$args->{AUTHOR}}) : $args->{AUTHOR};
+  $d->{CODEBASE}->{HREF} = $self->{opts}->{no_upload} ? $dist : 
+    ($binary || $dist);
   ($self->{archive} = $d->{CODEBASE}->{HREF}) =~ s!.*/(.*)!$1!;
 
   if ( my $script = $self->{opts}->{script}) {
@@ -1069,6 +565,7 @@ sub make_ppd {
         next unless (defined $results and defined $results->{mod_name});
         my $dist = $results->{dist_name};
         next if (not $dist or $dist =~ m!^perl$! or $dist =~ m!^Test!);
+	next if is_ap_core($dist);
         $self->{prereq_pm}->{$dist} = 
           $d->{PREREQ_PM}->{$dist} = 
             cpan2ppd_version($args->{PREREQ_PM}->{$dp});
@@ -1181,6 +678,7 @@ END
 
   my $zip = $self->{has}->{zip};
   my $copy = $local ? File::Spec::Unix->catfile($path, $archive) : $archive;
+  print qq{\nCreating $zipdist ...\n};
   if ($zip eq 'Archive::Zip') {
       my %contents = ($ppd_zip => $ppd,
                       $archive => $copy,
@@ -1202,9 +700,14 @@ END
           }
           copy($archive, $copy) or die "Cannot cp $archive to $copy: $!";
       }
+      rename($ppd, "$ppd.tmp") or die "Cannnot rename $ppd to $ppd.tmp: $!";
+      rename($ppd_zip, $ppd) or die "Cannnot rename $ppd_zip to $ppd: $!";
+      
       my @args = ($zip, $zipdist, $ppd, $copy, $readme);
       print "@args\n";
       system(@args) == 0 or die "@args failed: $?";
+      rename($ppd, $ppd_zip) or die "Cannnot rename $ppd to $ppd_zip: $!";
+      rename("$ppd.tmp", $ppd) or die "Cannnot rename $ppd.tmp to $ppd: $!";
       if ($path and $local and -d $path) {
           rmtree($path, 1, 1) or warn "Cannot rmtree $path: $!";
       }
@@ -1260,6 +763,7 @@ sub upload_ppm {
   }
 
   if (my $host = $upload->{host}) {
+    print qq{\nUploading files to $host ...\n};
     my ($user, $passwd) = ($upload->{user}, $upload->{passwd});
     die "Must specify a username and password to log into $host"
       unless ($user and $passwd);
@@ -1284,8 +788,10 @@ sub upload_ppm {
 	or die "Cannot upload $zip: ", $ftp->message;
     }
     $ftp->quit;
+    print qq{Done!\n};
   }
   else {
+    print qq{\nCopying files ....\n};
     copy($ppd, "$ppd_loc/$ppd") 
       or die "Cannot copy $ppd to $ppd_loc: $!";
     unless (-d $ar_loc) {
@@ -1300,6 +806,7 @@ sub upload_ppm {
       copy($zip, "$zip_loc/$zip") 
 	or die "Cannot copy $zip to $zip_loc: $!";
     }
+    print qq{Done!\n};
   }
 }
 
@@ -1362,6 +869,14 @@ I<MSWin32-x86-multi-thread-5.8> within PPM::Make will
 have I<option1 = new_value1>, I<option2 = value2>,
 and I<option3 = value3>, while any other architecture
 will have I<option1 = value1> and I<option2 = value2>.
+Options that take multiple values, such as C<reps>,
+can be specified as
+
+    reps = <<END
+  http://theoryx5.uwinnipeg.ca/ppms/
+  http://ppm.activestate.com/PPMPackages/5.8-windows/
+  END
+
 Options specified within the configuration file
 can be overridden by passing the option into
 the I<new()> method of PPM::Make.
@@ -1462,6 +977,11 @@ supplied tests will be treated as a fatal error. Setting
 I<ignore> to a true value causes failed tests to just
 issue a warning.
 
+=item skip =E<gt> boolean
+
+If this option is true, the tests when building a distribution
+won't be run.
+
 =item os =E<gt> value
 
 If this option specified, the value, if present, will be used instead 
@@ -1492,6 +1012,11 @@ file giving the command for installation is also included.
 
 If specified, a distribution will be made using C<make dist>
 which will include the I<ppd> and I<archive> file.
+
+=item reps =E<gt> \@repositories
+
+This specifies a list of repositories to search for when
+making a bundle file with PPM::Make::Bundle.
 
 =item program =E<gt> { p1 =E<gt> '/path/to/q1', p2 =E<gt> '/path/to/q2', ...}
 
@@ -1555,6 +1080,14 @@ in which case it is interpreted to be relative to that
 specified by I<ppd>. If this is not given, but I<ppd>
 is specified, this will default to the value of I<ppd>.
 
+=item bundle =E<gt> $path_to_bundles
+
+This is the location where the bundle file created with
+PPM::Make::Bundle should be placed.
+This may either be an absolute pathname or a relative one,
+in which case it is interpreted to be relative to that
+specified by I<ppd>. If this is not given, but I<ppd>
+is specified, this will default to the value of I<ppd>.
 
 =item host =E<gt> $hostname
 
@@ -1572,6 +1105,9 @@ This is the associated password to use for I<user>
 
 =back
 
+=item no_upload =E<gt> 1
+
+This option instructs C<upload> to be ignored (used by PPM::Make::Bundle)
 =back
 
 =head2 STEPS

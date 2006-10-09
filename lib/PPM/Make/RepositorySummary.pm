@@ -5,7 +5,7 @@ use warnings;
 use PPM::Make::Util qw(parse_ppd ppd2cpan_version);
 use File::Copy;
 our ($VERSION);
-$VERSION = '0.83';
+$VERSION = '0.87';
 
 sub new {
   my $class = shift;
@@ -192,9 +192,16 @@ sub searchsummary_softpkg {
     <TITLE>$d->{TITLE}</TITLE>
     <ABSTRACT>$d->{ABSTRACT}</ABSTRACT>
     <AUTHOR>$d->{AUTHOR}</AUTHOR>
+END
+  my $imp = $d->{IMPLEMENTATION};
+  foreach my $item(@$imp) {
+    print $fh <<"END";
     <IMPLEMENTATION>
-      <ARCHITECTURE NAME="$d->{ARCHITECTURE}->{NAME}" />
+      <ARCHITECTURE NAME="$item->{ARCHITECTURE}->{NAME}" />
     </IMPLEMENTATION>
+END
+  }
+  print $fh <<"END";
   </SOFTPKG>
 END
   return 1;
@@ -208,36 +215,44 @@ sub package_lst_softpkg {
     <TITLE>$d->{TITLE}</TITLE>
     <ABSTRACT>$d->{ABSTRACT}</ABSTRACT>
     <AUTHOR>$d->{AUTHOR}</AUTHOR>
-    <IMPLEMENTATION>
 END
 
-  my $deps = $d->{DEPENDENCY};
-  if ($deps and (ref($deps) eq 'ARRAY')) {
-    foreach my $dep (@$deps) {
-      print $fh 
-      qq{      <DEPENDENCY NAME="$dep->{NAME}" VERSION="$dep->{VERSION}" />\n};
+  my $imp = $d->{IMPLEMENTATION};
+  foreach my $item(@$imp) {
+    print $fh <<"END";
+    <IMPLEMENTATION>
+END
+    my $deps = $item->{DEPENDENCY};
+    if (defined $deps and (ref($deps) eq 'ARRAY')) {
+      foreach my $dep (@$deps) {
+	print $fh <<"END";
+      <DEPENDENCY NAME="$dep->{NAME}" VERSION="$dep->{VERSION}" />
+END
+      }
     }
-  }
 
-  foreach (qw(OS ARCHITECTURE)) {
-    next unless $d->{$_}->{NAME};
-    print $fh qq{      <$_ NAME="$d->{$_}->{NAME}" />\n};
-  }
-
-  if (my $script = $d->{INSTALL}->{SCRIPT}) {
-    my $install = 'INSTALL';
-    if (my $exec = $d->{INSTALL}->{EXEC}) {
-      $install .= qq{ EXEC="$exec"};
+    foreach (qw(OS ARCHITECTURE)) {
+      next unless $item->{$_}->{NAME};
+      print $fh qq{      <$_ NAME="$item->{$_}->{NAME}" />\n};
     }
-    if (my $href = $d->{INSTALL}->{HREF}) {
-      $install .= qq{ HREF="$href"};
-    }
-    print $fh qq{      <$install>$script</INSTALL>\n};
-  }
 
-  print $fh <<"END";
-      <CODEBASE HREF="$d->{CODEBASE}->{HREF}" />
+    if (my $script = $item->{INSTALL}->{SCRIPT}) {
+      my $install = 'INSTALL';
+      if (my $exec = $item->{INSTALL}->{EXEC}) {
+	$install .= qq{ EXEC="$exec"};
+      }
+      if (my $href = $item->{INSTALL}->{HREF}) {
+	$install .= qq{ HREF="$href"};
+      }
+      print $fh qq{      <$install>$script</INSTALL>\n};
+    }
+    
+    print $fh <<"END";
+      <CODEBASE HREF="$item->{CODEBASE}->{HREF}" />
     </IMPLEMENTATION>
+END
+  }
+  print $fh <<"END";
   </SOFTPKG>
 END
 
@@ -251,49 +266,64 @@ sub package_xml_softpkg {
   <SOFTPKG NAME="$d->{SOFTPKG}->{NAME}" VERSION="$s_version">
     <ABSTRACT>$d->{ABSTRACT}</ABSTRACT>
     <AUTHOR>$d->{AUTHOR}</AUTHOR>
+END
+  my $imp = $d->{IMPLEMENTATION};
+  my $size = scalar @$imp;
+  my $sp = ($size == 1) ? '    ' : '      ';
+  foreach my $item (@$imp) {
+    print $fh <<"END";
     <IMPLEMENTATION>
 END
 
-  if (my $arch = $d->{ARCHITECTURE}->{NAME}) {
-    print $fh qq{      <ARCHITECTURE NAME="$arch" />\n};
-  }
-
-  if (my $script = $d->{INSTALL}->{SCRIPT}) {
-    my $install = 'INSTALL';
-    if (my $exec = $d->{INSTALL}->{EXEC}) {
-      $install .= qq{ EXEC="$exec"};
+    if (my $arch = $item->{ARCHITECTURE}->{NAME}) {
+      print $fh qq{      <ARCHITECTURE NAME="$arch" />\n};
     }
-    if (my $href = $d->{INSTALL}->{HREF}) {
-      $install .= qq{ HREF="$href"};
-    }
-    print $fh qq{      <$install>$script</INSTALL>\n};
-  }
 
-  print $fh <<"END";
-      <CODEBASE HREF="$d->{CODEBASE}->{HREF}" />
+    if (my $script = $item->{INSTALL}->{SCRIPT}) {
+      my $install = 'INSTALL';
+      if (my $exec = $item->{INSTALL}->{EXEC}) {
+	$install .= qq{ EXEC="$exec"};
+      }
+      if (my $href = $item->{INSTALL}->{HREF}) {
+	$install .= qq{ HREF="$href"};
+      }
+      print $fh qq{      <$install>$script</INSTALL>\n};
+    }
+
+    print $fh <<"END";
+      <CODEBASE HREF="$item->{CODEBASE}->{HREF}" />
+END
+    if ($size == 1) {
+      print $fh <<"END";
     </IMPLEMENTATION>
 END
-
-  my $provide = $d->{PROVIDE};
-  if ($provide and (ref($provide) eq 'ARRAY')) {
-    foreach my $mod(@$provide) {
-      my $string = qq{    <PROVIDE NAME="$mod->{NAME}"};
-      if ($mod->{VERSION}) {
-        $string .= qq{ VERSION="$mod->{VERSION}"};
-      }
-      $string .= qq{ />\n};
-      print $fh $string;
     }
-  }
+    my $provide = $item->{PROVIDE};
+    if ($provide and (ref($provide) eq 'ARRAY')) {
+      foreach my $mod(@$provide) {
+	my $string = qq{$sp<PROVIDE NAME="$mod->{NAME}"};
+	if ($mod->{VERSION}) {
+	  $string .= qq{ VERSION="$mod->{VERSION}"};
+	}
+	$string .= qq{ />\n};
+	print $fh $string;
+      }
+    }
 
-  my $deps = $d->{DEPENDENCY};
-  if ($deps and (ref($deps) eq 'ARRAY')) {
-    foreach my $dep (@$deps) {
+    my $deps = $item->{DEPENDENCY};
+    if ($deps and (ref($deps) eq 'ARRAY')) {
+      foreach my $dep (@$deps) {
 #  ppm4 819 doesn't seem to like version numbers
 #      my $p_version = ppd2cpan_version($dep->{VERSION});
 #      print $fh 
 #      qq{    <REQUIRE NAME="$dep->{NAME}" VERSION="$p_version" />\n};
-     print $fh qq{    <REQUIRE NAME="$dep->{NAME}" />\n};
+	print $fh qq{$sp<REQUIRE NAME="$dep->{NAME}" />\n};
+      }
+    }
+    if ($size > 1) {
+      print $fh <<"END";
+    </IMPLEMENTATION>
+END
     }
   }
 
@@ -405,6 +435,10 @@ found in all I<ppd> files found:
   </REPOSITORYSUMMARY>
 
 =back
+
+If multiple E<lt>IMPLEMETATIONE<gt> sections are present
+in the ppd file, all will be included in the corresponding
+summary files.
 
 Options accepted by the I<new> constructor include
 

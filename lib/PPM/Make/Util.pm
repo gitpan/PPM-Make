@@ -1,5 +1,6 @@
 package PPM::Make::Util;
 use strict;
+use warnings;
 use Exporter;
 use File::Basename;
 use Safe;
@@ -14,78 +15,82 @@ use CPAN::DistnameInfo;
 use File::HomeDir;
 use HTML::Entities qw(encode_entities encode_entities_numeric);
 use File::Spec;
+use PPM::Make::Config qw(WIN32 HAS_CPAN HAS_PPM HAS_MB);
+
+=head1 NAME
+
+  PPM::Make::Util - Utility functions for PPM::Make
+
+=head1 SYNOPSIS
+
+  use PPM::Make::Util qw(:all);
+
+=head1 DESCRIPTION
+
+This module contains a number of utility functions used by PPM::Make.
+
+=over 2
+
+=cut
 
 our ($VERSION);
-$VERSION = '0.83';
-
-use constant WIN32 => $^O eq 'MSWin32';
+$VERSION = '0.87';
 
 my %encode = ('&' => '&amp;', '>' => '&gt;',
 	      '<' => '&lt;', '"' => '&quot;');
-
-sub has_cpan {
-  my $has_config = 0;
-  require File::Spec;
-  my $home = File::HomeDir->my_home;
-  if ($home) {
-    eval 
-      {require File::Spec->catfile($home, '.cpan', 
-                                   'CPAN', 'MyConfig.pm');};
-    $has_config = 1 unless $@;
-  }
-  unless ($has_config) {
-    eval {require CPAN::HandleConfig;};
-    eval {require CPAN::Config;};
-    my $dir;
-    unless (WIN32) {
-        $dir = $INC{'CPAN/Config.pm'};
-    }
-    $has_config = 1 unless ($@ or ($dir and not -w $dir));
-  }
-  require CPAN if $has_config;
-  return $has_config;
-}
-use constant HAS_CPAN => has_cpan();
-
-sub has_ppm {
-  my $has_ppm = 0;
-  my $ppm = File::Spec->catfile($Config{bin}, 'ppm.bat');
-  return unless -f $ppm;
-  eval{require PPM;};
-  return $@ ? 3 : 2;
-}
-use constant HAS_PPM => has_ppm();
-
-sub has_mb {
-  my $has_mb = 0;
-  eval {require Module::Build;};
-  $has_mb = 1 unless $@;
-  return $has_mb;
-}
-use constant HAS_MB => has_mb();
-
-require Win32 if WIN32;
 
 use base qw(Exporter);
 
 our (@EXPORT_OK, %EXPORT_TAGS, $protocol, $ext, $src_dir, $build_dir, $ERROR);
 $protocol = qr{^(http|ftp)://};
 $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)};
+my @url_list = url_list();
 
 my @exports = qw(load_cs verifyMD5 xml_encode parse_version $ERROR
-                 is_core trim which parse_ppd parse_ppm
-                 ppd2cpan_version cpan2ppd_version tempfile what_have_you
-                 mod_search dist_search file_to_dist fetch_nmake
-                 fetch_file WIN32 HAS_CPAN HAS_PPM HAS_MB fix_path
-		 );
+                 is_core is_ap_core url_list
+		 trim parse_ppd parse_ppm parse_abstract
+                 ppd2cpan_version cpan2ppd_version tempfile
+                 mod_search dist_search file_to_dist cpan_file
+                 fetch_file fix_path);
 
 %EXPORT_TAGS = (all => [@exports]);
 @EXPORT_OK = (@exports);
 
-my @path_ext = ();
-path_ext() if WIN32;
+my %ap_core = map {$_ => 1} qw(
+			       Archive-Tar
+			       Archive-Zip
+			       Compress-Zlib
+			       Data-Dump
+			       Digest-HMAC
+			       Digest-MD2
+			       Digest-MD4
+			       Digest-SHA1
+			       File-CounterFile
+			       Font-AFM
+			       HTML-Parser
+			       HTML-Tagset
+			       HTML-Tree
+			       IO-String
+			       IO-Zlib
+			       libwin32
+			       libwww-perl
+			       MD5
+			       MIME-Base64-Scripts
+			       SOAP-Lite
+			       Term-ReadLine-Perl
+			       TermReadKey
+			       Text-Autoformat
+			       Text-Reform
+			       Tk
+			       Unicode-String
+			       URI
+			       XML-Parser
+			       XML-Simple  );
+
+if (WIN32 and Win32::BuildNumber > 818) {
+  $ap_core{'DBI'}++; $ap_core{'DBD-SQLite'}++;
+}
 src_and_build();
-my @url_list = url_list();
 
 my %Escape = ('&' => 'amp',
 	      '>' => 'gt',
@@ -97,20 +102,6 @@ my %dists;
 my $info_soap;
 my $info_uri = 'http://theoryx5.uwinnipeg.ca/Apache/InfoServer';
 my $info_proxy = 'http://theoryx5.uwinnipeg.ca/cgi-bin/ppminfo.cgi';
-
-=head1 NAME
-
-  PPM::Make::Util - Utility functions for PPM::Make
-
-=head1 SYNOPSIS
-
-  use PPM::Make qw(:all);
-
-=head1 DESCRIPTION
-
-This module contains a number of utility functions used by PPM::Make.
-
-=over 2
 
 =item fix_path
 
@@ -229,6 +220,22 @@ sub is_core {
   return $is_core;
 }
 
+=item is_ap_core
+
+Tests to see if a package is part of the ActivePerl core (at
+least for recent ActivePerl versions).
+
+  my $is_ap_core = is_ap_core('libwin32');
+  print "libwin32 is a core package" if $is_ap_core;
+
+=cut
+
+sub is_ap_core {
+  my $p = shift;
+  return unless defined $p;
+  return defined $ap_core{$p} ? 1 : 0;
+}
+
 =item trim
 
 Trims white space.
@@ -308,48 +315,6 @@ sub cpan2ppd_version {
 }
 
 
-sub path_ext {
-  if ($ENV{PATHEXT}) {
-    push @path_ext, split ';', $ENV{PATHEXT};
-    for my $extention (@path_ext) {
-      $extention =~ s/^\.*(.+)$/$1/;
-    }
-  }
-  else {
-    #Win9X: doesn't have PATHEXT
-    push @path_ext, qw(com exe bat);
-  }
-}
-
-=item which
-
-Find the full path to a program, if available.
-
-  my $perl = which('perl');
-
-=cut
-
-sub which {
-  my $program = shift;
-  return undef unless $program;
-  my @results = ();
-  my $home = File::HomeDir->my_home;
-  for my $base (map { File::Spec->catfile($_, $program) } File::Spec->path()) {
-    if ($home and not WIN32) {
-      # only works on Unix, but that's normal:
-      # on Win32 the shell doesn't have special treatment of '~'
-      $base =~ s/~/$home/o;
-    }
-    return $base if -x $base;
-    
-    if (WIN32) {
-      for my $extention (@path_ext) {
-	return "$base.$extention" if -x "$base.$extention";
-      }
-    }
-  }
-}
-
 =item parse_ppd
 
 Parse a I<ppd> file.
@@ -359,10 +324,48 @@ Parse a I<ppd> file.
   print $d->{ABSTRACT};
   print $d->{OS}->{NAME};
 
+  my $e = parse_ppd($ppd, 'MSWin32-x86-multi-thread');
+  print $e->{ABSTRACT};
+
+This routine takes a required argument of a I<ppd> file and,
+optionally, an ARCHITECTURE name to restrict the results to.
+It returns a data structure containing the information of 
+the ppd file:
+
+    $d->{SOFTPKG}->{NAME}
+    $d->{SOFTPKG}->{VERSION}
+    $d->{TITLE}
+    $d->{AUTHOR}
+    $d->{ABSTRACT}
+    $d->{PROVIDE}
+    $d->{DEPENDENCY}
+    $d->{OS}->{NAME}
+    $d->{ARCHITECTURE}->{NAME}
+    $d->{CODEBASE}->{HREF}
+    $d->{INSTALL}->{EXEC}
+    $d->{INSTALL}->{SCRIPT}
+    $d->{INSTALL}->{HREF}
+
+The I<PROVIDE> and I<DEPENDENDENCY> tags are array references
+containing lists of, respectively, the prerequisites required and 
+the modules supplied by the package, with keys of I<NAME> and
+I<VERSION>.
+
+If there is more than one I<IMPLEMENTATION> section in the
+ppd file, all the results except for the I<SOFTPKG> elements and
+I<TITLE>, I<AUTHOR>, and I<ABSTRACT> will be placed in 
+a I<$d-E<gt>{IMPLENTATION}> array
+reference. If an optional second argument is passed to 
+I<parse_ppd($file, $arch)>, this will filter out all implementation
+sections except for the specified I<ARCHITECTURE> given by I<$arch>.
+
 =cut
+
+my $i;
 
 sub parse_ppd {
   my $file = shift;
+  my $arch = shift;
   unless (-e $file) {
       $ERROR = qq{$file not found.};
       return;
@@ -376,22 +379,55 @@ sub parse_ppd {
 				       },
 			  );
   my $d = $p->parsefile($file);
+  my $implem = $d->{IMPLEMENTATION};
+  my $size = scalar @$implem;
+  if ($size == 1) {
+    $d->{PROVIDE} = $implem->[0]->{PROVIDE} || [];
+    $d->{DEPENDENCY} = $implem->[0]->{DEPENDENCY} || [];
+    $d->{OS}->{NAME} = $implem->[0]->{OS}->{NAME} || '';
+    $d->{ARCHITECTURE}->{NAME} = $implem->[0]->{ARCHITECTURE}->{NAME} || '';
+    $d->{CODEBASE}->{HREF} = $implem->[0]->{CODEBASE}->{HREF};
+    $d->{INSTALL}->{EXEC} = $implem->[0]->{INSTALL}->{EXEC};
+    $d->{INSTALL}->{SCRIPT} = $implem->[0]->{INSTALL}->{SCRIPT};
+    $d->{INSTALL}->{HREF} = $implem->[0]->{INSTALL}->{HREF};
+  }
+  elsif (defined $arch) {
+    my $flag = 0;
+    my $i;
+    for ($i=0; $i<$size; $i++) {
+      if ($implem->[$i]->{ARCHITECTURE}->{NAME} eq $arch) {
+	$flag++;
+	last;
+      }
+    }
+    return unless $flag;
+    $d->{PROVIDE} = $implem->[$i]->{PROVIDE} || [];
+    $d->{DEPENDENCY} = $implem->[$i]->{DEPENDENCY} || [];
+    $d->{OS}->{NAME} = $implem->[$i]->{OS}->{NAME} || '';
+    $d->{ARCHITECTURE}->{NAME} = $implem->[$i]->{ARCHITECTURE}->{NAME} || '';
+    $d->{CODEBASE}->{HREF} = $implem->[$i]->{CODEBASE}->{HREF};
+    $d->{INSTALL}->{EXEC} = $implem->[$i]->{INSTALL}->{EXEC};
+    $d->{INSTALL}->{SCRIPT} = $implem->[$i]->{INSTALL}->{SCRIPT};
+    $d->{INSTALL}->{HREF} = $implem->[$i]->{INSTALL}->{HREF};
+  }
   return $d;
 }
 
 sub ppd_init {
   my $self = shift;
+  $i = 0;
   $self->{_mydata} = {
 		      SOFTPKG => {NAME => '', VERSION => ''},
 		      TITLE => '',
 		      AUTHOR => '',
 		      ABSTRACT => '',
 		      PROVIDE => [],
+		      IMPLEMENTATION => [],
 		      OS => {NAME => ''},
 		      ARCHITECTURE => {NAME => ''},
 		      CODEBASE => {HREF => ''},
 		      DEPENDENCY => [],
-		      INSTALL => {EXEC => '', SCRIPT => ''},
+		      INSTALL => {EXEC => '', SCRIPT => '', HREF => ''},
 		      wanted => {TITLE => 1, ABSTRACT => 1, AUTHOR => 1},
 		      _current => '',
 		     };
@@ -401,7 +437,6 @@ sub ppd_start {
   my ($self, $tag, %attrs) = @_;
   my $internal = $self->{_mydata};
   $internal->{_current} = $tag;
-  
  SWITCH: {
     ($tag eq 'SOFTPKG') and do {
       $internal->{SOFTPKG}->{NAME} = $attrs{NAME};
@@ -412,34 +447,39 @@ sub ppd_start {
       my $name = $attrs{NAME};
       my $version = $attrs{VERSION};
       if ($version) {
-	push @{$internal->{PROVIDE}},
+	push @{$internal->{IMPLEMENTATION}->[$i]->{PROVIDE}},
 	  {NAME => $name, VERSION => $version};
       }
       else {
-	push @{$internal->{PROVIDE}},
+	push @{$internal->{IMPLEMENTATION}->[$i]->{PROVIDE}},
 	  {NAME => $name};	
       }
       last SWITCH;
     };
     ($tag eq 'CODEBASE') and do {
-      $internal->{CODEBASE}->{HREF} = $attrs{HREF};
+      $internal->{IMPLEMENTATION}->[$i]->{CODEBASE}->{HREF} =
+	$attrs{HREF};
       last SWITCH;
     };
     ($tag eq 'OS') and do {
-	$internal->{OS}->{NAME} = $attrs{NAME};
-	last SWITCH;
-      };
+      $internal->{IMPLEMENTATION}->[$i]->{OS}->{NAME} =
+	$attrs{NAME};
+      last SWITCH;
+    };
     ($tag eq 'ARCHITECTURE') and do {
-      $internal->{ARCHITECTURE}->{NAME} = $attrs{NAME};
+      $internal->{IMPLEMENTATION}->[$i]->{ARCHITECTURE}->{NAME} =
+	$attrs{NAME};
       last SWITCH;
     };
     ($tag eq 'INSTALL') and do {
-     $internal->{INSTALL}->{EXEC} = $attrs{EXEC};
-     $internal->{INSTALL}->{HREF} = $attrs{HREF};
+      $internal->{IMPLEMENTATION}->[$i]->{INSTALL}->{EXEC} =
+	$attrs{EXEC};
+      $internal->{IMPLEMENTATION}->[$i]->{INSTALL}->{HREF} =
+	$attrs{HREF};
       last SWITCH;
-   };
+    };
     ($tag eq 'DEPENDENCY') and do {
-      push @{$internal->{DEPENDENCY}}, 
+      push @{$internal->{IMPLEMENTATION}->[$i]->{DEPENDENCY}}, 
 	{NAME => $attrs{NAME}, VERSION => $attrs{VERSION}};
       last SWITCH;
     };
@@ -457,7 +497,7 @@ sub ppd_char {
     $internal->{$tag} .= xml_encode($string);
   }
   elsif ($tag and $tag eq 'INSTALL') {
-    $internal->{INSTALL}->{SCRIPT} .= $string;
+    $internal->{IMPLEMENTATION}->[$i]->{INSTALL}->{SCRIPT} .= $string;
   }
   else {
     
@@ -466,6 +506,7 @@ sub ppd_char {
 
 sub ppd_end {
   my ($self, $tag) = @_;
+  $i++ if ($tag eq 'IMPLEMENTATION');
   delete $self->{_mydata}->{_current};
 }
 
@@ -473,6 +514,7 @@ sub ppd_final {
   my $self = shift;
   return $self->{_mydata};
 }
+
 
 sub parse_ppm {
   my $file = $PPM::PPMdat;
@@ -632,8 +674,9 @@ sub parse_version {
                   
                   local $1$2;
                   \$$2=undef; do {
-                    $_
-                  }; \$$2
+                    $_;
+                    return \$$2;
+                  };
                  };
     local $^W = 0;
     $version = eval($eval);
@@ -642,6 +685,37 @@ sub parse_version {
   }
   close $fh;
   return $version;
+}
+
+=item parse_abstract
+
+Attempt to obtain an abstract from a module file.
+
+  my $package = 'CPAN';
+  my $file = 'C:/Perl/lib/CPAN.pm';
+  my $abstract = parse_abstract($package, $file);
+
+=cut
+
+sub parse_abstract {
+  my ($package, $file) = @_;
+  my $basename = basename($file, qr/\.\w+$/);
+  (my $stripped = $basename) =~ s!\.\w+$!!;
+  (my $trans = $package) =~ s!-!::!g;
+  my $result;
+  my $inpod = 0;
+  open(my $fh, $file) or die "Couldn't open $file: $!";
+  while (<$fh>) {
+    $inpod = /^=(?!cut)/ ? 1 : /^=cut/ ? 0 : $inpod;
+    next if !$inpod;
+    chop;
+    next unless /^\s*($package|$basename|$stripped|$trans)\s+--*\s+(.*)/;
+    $result = $2;
+    last;
+  }
+  close($fh);
+  chomp($result);
+  return $result;
 }
 
 =item mod_search
@@ -711,6 +785,7 @@ sub cpan_mod_search {
       }
       if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
         $mods->{author} = $1;
+	$mods->{cpanid} = $mods->{author};
       }
       if ($string =~ /\s+CPAN_FILE\s+(\S+)\n/m) {
         $mods->{dist_file} = $1;
@@ -822,6 +897,7 @@ sub cpan_dist_search {
       $dists->{dist_vers} = $version;
       if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
 	$dists->{author} = $1;
+	$dists->{cpanid} = $dists->{author};
       }
       my $mods;
       if ($string =~ /\s+CONTAINSMODS\s+(.*)/m) {
@@ -891,6 +967,10 @@ Given a file of the form C<file.tar.gz> and a CPAN id
 of the form <ABCDEFG>, will return the CPAN file
 C<A/AB/ABCDEFG/file.tar.gz>.
 
+  my $cpanid = 'GBARR';
+  my $file = 'libnet-1.23.tar.gz';
+  my $cpan_file = cpan_file($cpanid, $file);
+
 =cut
 
 sub cpan_file {
@@ -907,8 +987,9 @@ If the file is specified beginning with I<http://> or I<ftp://>:
   my $fetch = 'http://my.server/my_file.tar.gz';
   my $filename = fetch_file($file);
 
-will grab this file directly. Otherwise, if the file has
-an extension I<\.(tar\.gz|tgz|tar\.Z|zip)>, if the file
+will grab this file directly. Otherwise, if the file is
+specified with an absolute path name, has
+an extension I<\.(tar\.gz|tgz|tar\.Z|zip)>, and if the file
 exists locally, it will use that; otherwise, it will assume
 this is a CPAN distribution and grab it from a CPAN mirror:
 
@@ -917,8 +998,8 @@ this is a CPAN distribution and grab it from a CPAN mirror:
 
 which assumes the file lives under I<$CPAN/authors/id/>. If
 neither of the above are satisfied, it will assume this
-is a module name, and fetch the corresponding CPAN distribution,
-if found.
+is, first of all, a module name, and if not found, a distribution
+name, and if found, will fetch the corresponding CPAN distribution.
 
   my $mod = 'Net::FTP';
   my $filename = fetch_file($mod);
@@ -949,6 +1030,10 @@ sub fetch_file {
     my $mod = $dist;
     $mod =~ s!-!::!g;
     my $results = mod_search($mod);
+    unless ($results) {
+      $mod =~ s!::!-!g;
+      $results = dist_search($mod);
+    }
     unless ($dist = cpan_file($results->{cpanid}, $results->{dist_file})) {
       $ERROR = qq{Cannot get distribution name of $mod.};
       return;
@@ -1026,64 +1111,6 @@ sub url_list {
   return @urls;
 }
 
-=item fetch_nmake
-
-Fetch C<nmake.exe>.
-
-  unless (my $installed_nmake = fetch_nmake) {
-      print "I could not retrieve nmake";
-  }
-
-=cut
-
-sub fetch_nmake {
-  my ($exe, $err) = ('nmake.exe', 'nmake.err');
-  if (my $p = which($exe)) {
-    warn qq{You already have $exe as "$p". Fetch aborted.};
-    return $p;
-  }
-  my $nmake = 'nmake15.exe';
-  my $r = 'http://download.microsoft.com/download/vc15/Patch/1.52/W95/EN-US/Nmake15.exe';
-  unless (is_success(getstore($r, $nmake))) {
-    $ERROR = "Could not fetch $nmake";
-    return;
-  }
-  unless (-e $nmake) {
-    $ERROR = "Getting $nmake failed";
-    return;
-  }
-  my @args = ($nmake);
-  system(@args);
-  unless (-e $exe and -e $err) {
-    $ERROR = "Extraction of $exe and $err failed";
-    return;
-  }
-  use File::Copy;
-  my $dir = prompt('Which directory on your PATH should I copy the files to?',
-		   $Config{bin});
-  unless (-d $dir) {
-    my $ans = prompt(qq{$dir doesn\'t exist. Create it?}, 'yes');
-    if ($ans =~ /^y/i) {
-      mkdir $dir or do {
-	$ERROR = "Could not create $dir: $!";
-	return;
-      };
-    }
-    else {
-      $ERROR = "Will not create $dir";
-      return;
-    }
-  }
-  for ($exe, $err, 'README.TXT') {
-    move($_, $dir) or do {
-      $ERROR = "Moving $_ to $dir failed: $!";
-      return;
-    };
-  }
-  unlink $nmake or warn "Unlink of $nmake failed: $!";
-  return which($exe);
-}
-
 # from Module::Build
 sub prompt {
   my ($mess, $def) = @_;
@@ -1116,96 +1143,9 @@ sub prompt {
   return $ans;
 }
 
-sub what_have_you {
-  my ($progs, $arch, $os) = @_;
-  my %has;
-  if (defined $progs->{tar} and defined $progs->{gzip}) {
-    $has{tar} = $progs->{tar};
-    $has{gzip} = $progs->{gzip};
-  }
-  elsif ((not WIN32 and 
-	  (not $os or $os =~ /Win32/i or not $arch or $arch =~ /Win32/i))) {
-    $has{tar} = 
-      $Config{tar} || which('tar') || $CPAN::Config->{tar};
-    $has{gzip} =
-      $Config{gzip} || which('gzip') || $CPAN::Config->{gzip};
-  }
-  else {
-    eval{require Archive::Tar; require Compress::Zlib};
-    if ($@) {
-      $has{tar} = 
-	$Config{tar} || which('tar') || $CPAN::Config->{tar};
-      $has{gzip} =
-	$Config{gzip} || which('gzip') || $CPAN::Config->{gzip};
-    }
-    else {
-      my $atv = $Archive::Tar::VERSION + 0;
-      if (not WIN32 or (WIN32 and $atv >= 1.08)) {
-        $has{tar} = 'Archive::Tar';
-        $has{gzip} = 'Compress::Zlib';
-      }
-      else {
-         $has{tar} = 
-	    $Config{tar} || which('tar') || $CPAN::Config->{tar};
-          $has{gzip} =
-	    $Config{gzip} || which('gzip') || $CPAN::Config->{gzip};
-      }
-    }
-  }
-
-  if (defined $progs->{zip} and defined $progs->{unzip}) {
-    $has{zip} = $progs->{zip};
-    $has{unzip} = $progs->{unzip};
-  }
-  else {
-    eval{require Archive::Zip; };
-    if ($@) {
-      $has{zip} = 
-	$Config{zip} || which('zip') || $CPAN::Config->{zip};
-      $has{unzip} =
-	$Config{unzip} || which('unzip') || $CPAN::Config->{unzip};
-    }
-    else {
-      my $zipv = $Archive::Zip::VERSION + 0;
-      if ($zipv >= 1.02) {
-	require Archive::Zip; import Archive::Zip qw(:ERROR_CODES);
-	$has{zip} = 'Archive::Zip';
-	$has{unzip} = 'Archive::Zip';
-      }
-      else {
-	$has{zip} =
-	  $Config{zip} || which('zip') || $CPAN::Config->{zip};
-	$has{unzip} =
-	  $Config{unzip} || which('unzip') || $CPAN::Config->{unzip};
-      }
-    }
-  }
-  
-  my $make = WIN32 ? 'nmake' : 'make';
-  $has{make} = $progs->{make} ||
-    $Config{make} || which($make) || $CPAN::Config->{make};
-  if (WIN32 and not $has{make}) {
-    $has{make} = fetch_nmake();
-  }
-
-  $has{perl} = 
-    $^X || which('perl');
-  
-  foreach (qw(tar gzip make perl)) {
-    unless ($has{$_}) {
-      $ERROR = "Cannot find a '$_' program";
-      return;
-    }
-    print "Using $has{$_} ....\n";
-  }
-
-  return \%has;
-}
-
 1;
 
 __END__
-
 
 =back
 

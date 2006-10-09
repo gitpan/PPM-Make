@@ -9,7 +9,7 @@ use Test;
 use strict;
 use Cwd;
 my $cwd = getcwd;
-BEGIN { plan tests => 56 };
+BEGIN { plan tests => 38 };
 use PPM::Make;
 use Config;
 use File::Path;
@@ -60,7 +60,9 @@ my $has;
 foreach my $entry (@$provides) {
   $has->{$entry->{NAME}} = $entry->{VERSION};
 }
-foreach my $mod(qw(PPM::Make PPM::Make::Util PPM::Make::Install)) {
+my @mods = qw(PPM::Make PPM::Make::Util PPM::Make::Install
+		  PPM::Make::RepositorySummary);
+foreach my $mod(@mods) {
   ok(defined $has->{$mod});
   ok($has->{$mod} > 0);
 }
@@ -160,35 +162,3 @@ else {
 }
 ok($#f+1, $#files);
 unlink ($ppd, $tgz);
-
-$ENV{PPM_CFG} = "$cwd/t/ppm.cfg";
-$ppm = PPM::Make->new(arch => 'foo');
-ok($ppm);
-my $opts = $ppm->{opts};
-ok($opts);
-ok( $opts->{upload}->{user}, 'sarah');
-ok( $opts->{upload}->{passwd}, 'justina');
-ok( $opts->{upload}->{ppd}, '/home/to/wherever');
-ok( $opts->{upload}->{host}, 'a.galaxy.far.far.away');
-ok( $opts->{upload}->{ar}, undef);
-ok( $opts->{binary}, 'http://www.foo.com/bar');
-ok( $opts->{vs}, 1);
-$ppm = PPM::Make->new(arch => 'bar');
-$opts = $ppm->{opts};
-ok( $opts->{binary}, 'http://www.foo.com/bar');
-ok( $opts->{vs}, undef);
-ok( $opts->{upload}->{ppd}, '/path/to/ppds');
-ok( $opts->{upload}->{ar}, 'x86');
-$ppm = PPM::Make->new(arch => 'harry');
-$opts = $ppm->{opts};
-ok( $opts->{binary}, 'http://www.foo.com/bar');
-ok( $opts->{vs}, 1);
-ok( $opts->{upload}->{host}, undef);
-$ppm = PPM::Make->new(arch => 'foo', vs => 0, binary => 'http://localhost',
-		     upload => {ppd => '/another/path', user => 'lianne'});
-$opts = $ppm->{opts};
-ok( $opts->{binary}, 'http://localhost');
-ok( $opts->{vs}, 0);
-ok( $opts->{upload}->{ppd}, '/another/path');
-ok( $opts->{upload}->{user}, 'lianne');
-

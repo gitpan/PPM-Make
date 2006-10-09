@@ -39,6 +39,7 @@ GetOptions(\%opts,
            'passwd:s',
 	   'no-ppm4',
 	   'no-html',
+	   'skip',
           ) or pod2usage(2);
 
 my $dist = shift;
@@ -80,6 +81,7 @@ Options:
  [-z | --zip]              : make a zip distribution
  [-f | --force]            : force remaking a distribution
  [-i | --ignore]           : ignore any failing test results
+ [ --skip]                 : skip running the tests
  [-b | --binary] location  : specify the binary location
  [-n | --arch_sub]         : use \$Config{archname} as a subdirectory
  [-s | --script] script    : specify a script in the <INSTALL> field
@@ -95,7 +97,7 @@ Options:
  [-V | --ppmv]             : add version string to ppd and archive filenames
  [ --ppd ]  location       : copy the ppd to the specified location
  [ --ar ]   location       : copy the archive file to the specified location
- [ -- ]   location       : copy the archive file to the specified location
+ [ --zip ]   location      : copy the zipped file to the specified location
  [ --host]  host           : use the specified host for copying the ppm files
  [ --user]  user           : username to use when transferring ppm files
  [ --passwd] password      : password associated with user
@@ -137,7 +139,44 @@ as distributions to fetch and build.
 
 Options can be read from a configuration file
 (see L<PPM::Make>) and/or given as options to I<make_ppm>,
-unless the I<no_cfg> option is given.
+unless the I<no_cfg> option is given. An example
+C<.ppmcfg> file is
+
+ [default]
+ 
+ host = me.wherever.ca
+ user = me
+ passwd = whatever
+ 
+ [ MSWin32-x86-multi-thread-5.8 ]
+ 
+ binary = http://me.wherever.ca/ppms/x86/
+ ppd = /usr/local/httpd/htdocs/ppms/
+ ar = /usr/local/httpd/htdocs/ppms/x86/
+ zip = /usr/local/httpd/htdocs/ppms/zips
+ zipdist = 1
+ reps = <<END
+ http://theoryx5.uwinnipeg.ca/ppms/
+ http://www.bribes.org/perl/ppm/
+ http://ppm.activestate.com/PPMPackages/5.8-windows/
+ END
+ bundle = /usr/local/httpd/htdocs/ppms/bundles
+ 
+ [ MSWin32-x86-multi-thread ]
+ 
+ binary = http://me.wherever.ca/ppmpackages/x86/
+ ppd = /usr/local/httpd/htdocs/ppmpackages/
+ ar = /usr/local/httpd/htdocs/ppmpackages/x86/
+ zip = /usr/local/httpd/htdocs/ppmpackages/zips
+ zipdist = 1
+ no_ppm4 = 1
+ reps = <<END
+ http://ppm.activestate.com/PPMPackages/5.6/
+ http://theoryx5.uwinnipeg.ca/ppmpackages/
+ http://www.bribes.org/perl/ppm/
+ END
+ bundle = /usr/local/httpd/htdocs/ppmpackages/bundles
+
 In case of duplicates, the options to I<make_ppm> take
 precedence. Available options include:
 
@@ -159,6 +198,11 @@ will not remake it. This option forces remaking the distribution.
 By default, C<make_ppm>, if it is building the distribution,
 will die if all tests do not pass. Turning on this option
 instructs C<make_ppm> to ignore any test failures.
+
+=item [ --skip ]
+
+Setting this option will skip running any tests supplied
+with the package.
 
 =item [-b | --binary] location
 

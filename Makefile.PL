@@ -228,7 +228,7 @@ I can add PPM to the list of prerequisites to install, if
 you like.
 
 WARN
-  my $ans = prompt('Add PPM?', 'yes');
+  my $ans = prompt('Add PPM?', 'no');
   if ($ans =~ /^y/i) {
     $prereqs{'PPM'} = 0;
   }
@@ -243,7 +243,8 @@ WARN
   }
 }
 
-my @exe_files = map{"bin/$_"} qw(make_ppm ppm_install rep_summary);
+my @exe_files = map{"bin/$_"} qw(make_ppm ppm_install rep_summary
+				 make_ppm_bundle);
 #push @exe_files, 'tk-ppm' if WIN32;
 
 my $eu_version = $ExtUtils::MakeMaker::VERSION;

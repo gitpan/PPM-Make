@@ -1,9 +1,10 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         PPM-Make
-version:      0.83
+version:      0.87
 version_from: lib/PPM/Make.pm
 installdirs:  site
+license:      perl
 abstract:     Make a ppm package from a CPAN distribution
 authored_by:
     - Randy Kobes <r.kobes@uwinnipeg.ca>
@@ -23,23 +24,26 @@ requires:
 provides:
   PPM::Make:
     file: lib/PPM/Make.pm
-    version: 0.83
+    version: 0.87
   PPM::Make::Util:
     file: lib/PPM/Make/Util.pm
-    version: 0.83
+    version: 0.87
   PPM::Make::Install:
     file: lib/PPM/Make/Install.pm
-    version: 0.83
+    version: 0.87
+  PPM::Make::Config:
+    file: lib/PPM/Make/Config.pm
+    version: 0.87
   PPM::Make::RepositorySummary:
     file: lib/PPM/Make/RepositorySummary.pm
-    version: 0.83
+    version: 0.87
+  PPM::Make::Meta:
+    file: lib/PPM/Make/Meta.pm
+    version: 0.87
+  PPM::Make::Bundle:
+    file: lib/PPM/Make/Bundle.pm
+    version: 0.87
 no_index:
-  file:
-    - lib/PPM/XML/Element.pm
-    - lib/PPM/XML/PPD.pm
-    - lib/PPM/XML/PPMConfig.pm
-    - lib/PPM/XML/RepositorySummary.pm
-    - lib/PPM/XML/ValidatingElement.pm
   package:
     - ExtUtils::MakeMaker::_version
 distribution_type: module

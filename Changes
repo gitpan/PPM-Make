@@ -1,5 +1,27 @@
 Revision history for Perl extension PPM::Make.
 
+0.87 Wed, Oct 4, 2006
+
+  - remove PPM::XML::* files from distribution
+  - add a skip option to PPM::Make to skip running the tests
+  - when building up a list of dependencies, ignore those that
+    come with ActivePerl
+  - enable parse_ppd() to parse ppd files with multiple
+    <IMPLEMENTATION> sections, and have PPM::Make::RepositorySummary
+    output summary files with this information
+  - add PPM::Make::Bundle to make a zipped bundle file containing
+    a package and all of its prerequisites
+  - fixes for setting the version number in certain edge cases
+    (thanks to Serguei Trouchelle for the patch)
+  - if fetch_file() fails on assuming the argument passed is a
+    module, try it as a distribution.
+  - split methods used in PPM::Make to obtain meta information
+    about a distribution into PPM::Make::Meta
+  - split functions used in PPM::Make to obtain config information
+    into PPM::Make::Config
+  - if the author meta information is an array ref, dereference it
+    when writing the ppd file
+
 0.83 Fri, Sep 1, 2006
 
   - use better cross-platform method to guess if a module

@@ -10,7 +10,7 @@ use strict;
 use Cwd;
 use File::Spec;
 my $cwd = getcwd;
-BEGIN { plan tests => 7 };
+BEGIN { plan tests => 13 };
 use PPM::Make::RepositorySummary;
 ok(1); # If we made it this far, we're ok.
 
@@ -19,19 +19,21 @@ ok(1); # If we made it this far, we're ok.
 # Insert your test code below, the Test module is use()ed here so read
 # its man page ( perldoc Test ) for help writing this test script.
 
-my $rep = File::Spec->catdir($cwd, 't', 'PPMPackages');
-ok (-d $rep);
-my $obj = PPM::Make::RepositorySummary->new(rep => $rep);
-ok(ref($obj), 'PPM::Make::RepositorySummary');
-$obj->summary();
+for my $dir(qw(PPMPackages ppms)) {
+  my $rep = File::Spec->catdir($cwd, 't', $dir);
+  ok (-d $rep);
+  my $obj = PPM::Make::RepositorySummary->new(rep => $rep);
+  ok(ref($obj), 'PPM::Make::RepositorySummary');
+  $obj->summary();
 
-for my $file(qw(package.lst summary.ppm searchsummary.ppm package.xml)) {
-  my $received = File::Spec->catfile($rep, $file);
-  my $expected = File::Spec->catfile($rep, 'cmp_' . $file);
-  my ($expected_received, $expected_expected) =
-    expected_sizes($expected, $received);
-  ok($expected_received, $expected_expected);
-  unlink($received);
+  for my $file(qw(package.lst summary.ppm searchsummary.ppm package.xml)) {
+    my $received = File::Spec->catfile($rep, $file);
+    my $expected = File::Spec->catfile($rep, 'cmp_' . $file);
+    my ($expected_received, $expected_expected) =
+      expected_sizes($expected, $received);
+    ok($expected_received, $expected_expected);
+    unlink($received);
+  }
 }
 
 # compares the sizes of two files, disregarding
