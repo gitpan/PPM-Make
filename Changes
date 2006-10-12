@@ -1,5 +1,12 @@
 Revision history for Perl extension PPM::Make.
 
+0.88 Wed, Oct 11, 2006
+
+  - fix warnings about an abstract not found in certain cases
+  - try NAME and DISTNAME when trying to get info on modules
+    and packages from SOAP/CPAN.pm
+  - use smaller dummy .tar.gz archives under t/ppms/ for the tests
+
 0.87 Wed, Oct 4, 2006
 
   - remove PPM::XML::* files from distribution

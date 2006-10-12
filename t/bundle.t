@@ -56,5 +56,5 @@ foreach my $arch (keys %exts) {
   my $zipdist = File::Spec->catfile($cwd, 'Bundle-AppConfig.zip');
   ok(-f $zipdist);
   unlink ($zipdist);
-  rmtree($build_dir, 1, 1);
+  rmtree($build_dir, 1, 1) if (defined $build_dir and -d $build_dir);
 }

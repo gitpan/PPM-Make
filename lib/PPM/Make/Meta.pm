@@ -9,7 +9,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.87';
+$VERSION = '0.88';
 
 sub new {
   my ($class, %opts) = @_;
@@ -231,12 +231,12 @@ sub guess_abstract {
     }
     finddepth(sub{$_ eq $guess && ($hit = $File::Find::name) 
 		    && ($hit !~ m!blib/!)}, $cwd);
-    next unless (-f $hit);
+    next unless ($hit and -f $hit);
     print "Trying to get ABSTRACT from $hit ...\n";
     $result = parse_abstract($info->{NAME}, $hit);
     return $result if $result;
   }
-  if (my $try = $info->{NAME}) {
+  if (my $try = $info->{NAME} || $info->{DISTNAME}) {
     $try =~ s{-}{::}g;
     my $mod_search;
     unless ($mod_search = $self->{mod_search}) {
@@ -246,7 +246,7 @@ sub guess_abstract {
     return $mod_search->{mod_abs}
       if ($mod_search and defined $mod_search->{mod_abs});
   }
-  if (my $try = $info->{DISTNAME}) {
+  if (my $try = $info->{NAME} || $info->{DISTNAME}) {
     $try =~ s{::}{-}g;
     my $dist_search;
     unless ($dist_search = $self->{dist_search}) {
@@ -354,7 +354,7 @@ sub guess_author {
     return $mod_search->{author}
       if ($mod_search and defined $mod_search->{author});
   }
-  if (my $try = $info->{DISTNAME}) {
+  if (my $try = $info->{DISTNAME} || $info->{NAME}) {
     $try =~ s{::}{-}g;
     my $dist_search;
     unless ($dist_search = $self->{dist_search}) {

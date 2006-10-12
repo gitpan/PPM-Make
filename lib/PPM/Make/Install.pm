@@ -8,7 +8,7 @@ use PPM::Make::Util qw(:all);
 use Config;
 use Cwd;
 our ($VERSION);
-$VERSION = '0.87';
+$VERSION = '0.88';
 
 sub new {
   my ($class, %opts) = @_;

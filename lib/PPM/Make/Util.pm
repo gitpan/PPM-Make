@@ -34,7 +34,7 @@ This module contains a number of utility functions used by PPM::Make.
 =cut
 
 our ($VERSION);
-$VERSION = '0.87';
+$VERSION = '0.88';
 
 my %encode = ('&' => '&amp;', '>' => '&gt;',
 	      '<' => '&lt;', '"' => '&quot;');
@@ -714,6 +714,7 @@ sub parse_abstract {
     last;
   }
   close($fh);
+  return unless $result;
   chomp($result);
   return $result;
 }
