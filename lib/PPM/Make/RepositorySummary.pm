@@ -5,7 +5,7 @@ use warnings;
 use PPM::Make::Util qw(parse_ppd ppd2cpan_version);
 use File::Copy;
 our ($VERSION);
-$VERSION = '0.88';
+$VERSION = '0.89';
 
 sub new {
   my $class = shift;
@@ -98,7 +98,6 @@ sub summary {
     my $tmp =  $real . '.TMP';
     move($tmp, $real) or warn qq{Cannot rename $tmp to $real: $!};
   }
-
   return 1;
 }
 

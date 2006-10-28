@@ -19,7 +19,7 @@ use Safe;
 use File::HomeDir;
 
 our ($VERSION);
-$VERSION = '0.88';
+$VERSION = '0.89';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -97,7 +97,8 @@ sub make_ppm {
   $self->check_files() if $self->{opts}->{add};
   $self->adjust_binary() if $self->{opts}->{arch_sub};
   $self->build_dist() 
-    unless (-d 'blib' and (-f 'Makefile' or ($mb and -f 'Build' and -d '_build')) 
+    unless (-d 'blib' and 
+	    (-f 'Makefile' or ($mb and -f 'Build' and -d '_build')) 
             and not $force);
 
   my $meta = PPM::Make::Meta->new(dir => $self->{cwd});
@@ -132,6 +133,7 @@ sub make_ppm {
       unless $self->{opts}->{upload}->{ppd}; 
     $self->upload_ppm();
   }
+  return 1;
 }
 
 sub check_script {

@@ -34,7 +34,7 @@ This module contains a number of utility functions used by PPM::Make.
 =cut
 
 our ($VERSION);
-$VERSION = '0.88';
+$VERSION = '0.89';
 
 my %encode = ('&' => '&amp;', '>' => '&gt;',
 	      '<' => '&lt;', '"' => '&quot;');
@@ -1035,10 +1035,11 @@ sub fetch_file {
       $mod =~ s!::!-!g;
       $results = dist_search($mod);
     }
-    unless ($dist = cpan_file($results->{cpanid}, $results->{dist_file})) {
-      $ERROR = qq{Cannot get distribution name of $mod.};
+    unless ($results->{cpanid} and $results->{dist_file}) {
+      $ERROR = qq{Cannot get distribution name of '$mod'};
       return;
     }
+    $dist = cpan_file($results->{cpanid}, $results->{dist_file});
   }
   my $id = dirname($dist);
   $to = basename($dist, $ext);

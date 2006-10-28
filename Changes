@@ -1,5 +1,14 @@
 Revision history for Perl extension PPM::Make.
 
+0.89 Sat, Oct 28, 2006
+
+  - add "return 1" to end of make_ppm of PPM::Make, make_bundle
+    of PPM::Make::Bundle, and ppm_install of PPM::Make::Install,
+    so one can eval() them (suggested by Serguei Trouchelle)
+  - if a distribution name can't be found corresponding to a
+    dist or mod argument, die at a stage before trying to
+    find the non-existent file.
+
 0.88 Wed, Oct 11, 2006
 
   - fix warnings about an abstract not found in certain cases

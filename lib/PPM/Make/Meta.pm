@@ -9,7 +9,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.88';
+$VERSION = '0.89';
 
 sub new {
   my ($class, %opts) = @_;

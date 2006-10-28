@@ -8,7 +8,7 @@ use PPM::Make::Util qw(:all);
 use Config;
 use Cwd;
 our ($VERSION);
-$VERSION = '0.88';
+$VERSION = '0.89';
 
 sub new {
   my ($class, %opts) = @_;
@@ -107,6 +107,7 @@ sub make_ppm {
   $self->make_html() unless (-d 'blib/html' and not $force);
   $dist = $self->make_dist();
   $self->make_ppd($dist);
+  return 1;
 }
 
 sub ppm_install {
@@ -142,6 +143,7 @@ sub ppm_install {
     print "Removing $cwd ...\n";
     rmtree($cwd) or warn "Cannot remove $cwd: $!";
   }
+  return 1;
 }
 
 1;

@@ -12,7 +12,7 @@ use PPM::Make::Util qw(:all);
 use PPM::Make::Config qw(:all);
 use LWP::Simple;
 our ($VERSION);
-$VERSION = '0.88';
+$VERSION = '0.89';
 
 my @cpan_mirrors = url_list();
 my $protocol = qr{^(http|ftp)://};
@@ -66,6 +66,7 @@ sub make_bundle {
       rmtree($build_dir, 1, 1) or warn qq{Cannot rmtree $build_dir: $!};
     }
   }
+  return 1;
 }
 
 sub make_package {
