@@ -34,7 +34,7 @@ This module contains a number of utility functions used by PPM::Make.
 =cut
 
 our ($VERSION);
-$VERSION = '0.89';
+$VERSION = '0.91';
 
 my %encode = ('&' => '&amp;', '>' => '&gt;',
 	      '<' => '&lt;', '"' => '&quot;');
@@ -654,6 +654,7 @@ Extracts a version string from a module file.
 # from ExtUtils::MM_Unix
 sub parse_version {
   my $parsefile = shift;
+  return unless -e $parsefile;
   my $version;
   local $/ = "\n";
   my $fh;

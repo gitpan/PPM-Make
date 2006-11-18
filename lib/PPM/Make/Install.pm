@@ -5,15 +5,17 @@ use PPM::Make;
 use File::Path;
 use base qw(PPM::Make);
 use PPM::Make::Util qw(:all);
+use PPM::Make::Config qw(:all);
+use PPM::Make::Meta;
 use Config;
 use Cwd;
 our ($VERSION);
-$VERSION = '0.89';
+$VERSION = '0.91';
 
 sub new {
   my ($class, %opts) = @_;
 
-  die "\nInvalid option specification" unless check_opts(%opts);
+  die "\nInvalid option specification" unless check_opts_install(%opts);
   die "Must have the ppm utility to install" unless HAS_PPM;
   my $arch = $Config{archname};
   my $os = $Config{osname};
@@ -38,10 +40,10 @@ sub new {
   bless $self, $class;
 }
 
-sub check_opts {
+sub check_opts_install {
   my %opts = @_;
   my %legal = 
-    map {$_ => 1} qw(force ignore dist program upgrade remove);
+    map {$_ => 1} qw(force ignore dist program upgrade remove skip);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_'\n";
@@ -91,19 +93,21 @@ sub make_ppm {
   $self->build_dist() 
       unless (-d 'blib' and (-f 'Makefile' or ($mb and -f 'Build') )
               and not $force);
-  $self->parse_yaml if (-e 'META.yml');
-  if ($mb) {
-    $self->parse_build();
+  my $meta = PPM::Make::Meta->new(dir => $self->{cwd});
+  die qq{Creating PPM::Make::Meta object failed}
+    unless ($meta and (ref($meta) eq 'PPM::Make::Meta'));
+  $meta->meta();
+  foreach my $key( keys %{$meta->{info}}) {
+    next unless defined $meta->{info}->{$key};
+    $self->{args}->{$key} ||= $meta->{info}->{$key};
   }
-  else {
-#    $self->parse_makepl();
-    $self->parse_make() unless $self->{args}->{NAME};
+  for my $search_info(qw(dist_search mod_search)) {
+    next unless defined $meta->{$search_info};
+    $self->{$search_info} = $meta->{$search_info};
   }
-  $self->abstract();
-  $self->author();
-  $self->{version} = ($self->{args}->{VERSION} ||
-                      parse_version($self->{args}->{VERSION_FROM}) ) 
-    or warn "Could not extract version information";
+  $self->{version} = (defined $self->{args}->{VERSION_FROM}) ?
+    parse_version($self->{args}->{VERSION_FROM}) :
+      ($self->{args}->{VERSION});
   $self->make_html() unless (-d 'blib/html' and not $force);
   $dist = $self->make_dist();
   $self->make_ppd($dist);

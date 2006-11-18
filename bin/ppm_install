@@ -14,6 +14,7 @@ GetOptions(\%opts,
            'remove|r',
            'force|f',
            'upgrade',
+	   'skip',
           ) or pod2usage(2);
 
 my $dist = shift;
@@ -42,6 +43,7 @@ Options:
  [-f | --force]       : force remaking a distribution
  [--upgrade]          : upgrade via ppm
  [--program]  b=a     : specify "a" to be used for the "b" program
+ [ --skip]            : skip running the tests
 
 Additional Arguments:
 
@@ -76,6 +78,11 @@ as distributions to fetch and build.
 By default, C<ppm_install>, if it is building the distribution,
 will die if all tests do not pass. Turning on this option
 instructs C<ppm_install> to ignore any test failures.
+
+=item [ --skip ]
+
+Setting this option will skip running any tests supplied
+with the package.
 
 =item [-r | --remove]
 

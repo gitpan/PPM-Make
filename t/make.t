@@ -9,7 +9,7 @@ use Test;
 use strict;
 use Cwd;
 my $cwd = getcwd;
-BEGIN { plan tests => 38 };
+BEGIN { plan tests => 44 };
 use PPM::Make;
 use Config;
 use File::Path;
@@ -61,7 +61,8 @@ foreach my $entry (@$provides) {
   $has->{$entry->{NAME}} = $entry->{VERSION};
 }
 my @mods = qw(PPM::Make PPM::Make::Util PPM::Make::Install
-		  PPM::Make::RepositorySummary);
+                  PPM::Make::RepositorySummary PPM::Make::Config
+                  PPM::Make::Meta PPM::Make::Bundle);
 foreach my $mod(@mods) {
   ok(defined $has->{$mod});
   ok($has->{$mod} > 0);

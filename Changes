@@ -1,5 +1,16 @@
 Revision history for Perl extension PPM::Make.
 
+0.91 Sat, Nov 18, 2006
+
+  - import HAS_PPM from PPM::Make::Config in PPM::Make::Install
+  - use VERSION from META.yml only as a last resort, as a number
+    of authors forget to update the META.yml:
+        https://rt.cpan.org/Ticket/Display.html?id=22699
+  - rename check_opts of PPM::Make::Install to check_opts_install,
+    to avoid "subroutine redefinition" warning.
+  - use PPM::Make::Meta in PPM::Make::Install
+  - add --skip option to PPM::Make::Install to skip running tests
+
 0.89 Sat, Oct 28, 2006
 
   - add "return 1" to end of make_ppm of PPM::Make, make_bundle

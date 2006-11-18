@@ -9,7 +9,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.89';
+$VERSION = '0.91';
 
 sub new {
   my ($class, %opts) = @_;
@@ -32,13 +32,13 @@ sub meta {
   }
   else {
 #    $self->parse_makepl();
-    $self->parse_make()
-        unless ($self->{info}->{NAME} and $self->{info}->{AUTHOR});
+    $self->parse_make();
   }
   $self->abstract();
   $self->author();
-  $self->{info}->{VERSION} ||=
-    parse_version($self->{info}->{VERSION_FROM});
+  $self->{info}->{VERSION} = (defined $self->{info}->{VERSION_FROM}) ?
+    parse_version($self->{info}->{VERSION_FROM}) :
+      $self->{info}->{VERSION};
   $self->bundle() if ($self->{info}->{NAME} =~ /^(Bundle|Task)/i);
   return 1;
 }
