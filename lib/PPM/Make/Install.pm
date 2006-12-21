@@ -10,7 +10,7 @@ use PPM::Make::Meta;
 use Config;
 use Cwd;
 our ($VERSION);
-$VERSION = '0.91';
+$VERSION = '0.92';
 
 sub new {
   my ($class, %opts) = @_;

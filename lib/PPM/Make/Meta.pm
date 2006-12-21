@@ -9,7 +9,7 @@ use Safe;
 use YAML qw(LoadFile);
 
 our ($VERSION);
-$VERSION = '0.91';
+$VERSION = '0.92';
 
 sub new {
   my ($class, %opts) = @_;
@@ -311,8 +311,8 @@ sub parse_bundle {
   my $in_cont = 0;
   open(my $fh, $file) or die "Couldn't open $file: $!";
   while (<$fh>) {
-    $in_cont = m/^=(?!head1\s+(CONTENTS|DESCRIPTION))/ ? 0 :
-      m/^=head1\s+(CONTENTS|DESCRIPTION)/ ? 1 : $in_cont;
+    $in_cont = m/^=(?!head1\s+CONTENTS)/ ? 0 :
+      m/^=head1\s+CONTENTS/ ? 1 : $in_cont;
     next unless $in_cont;
     next if /^=/;
     s/\#.*//;

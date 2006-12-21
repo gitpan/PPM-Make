@@ -5,7 +5,7 @@ use warnings;
 use PPM::Make::Util qw(parse_ppd ppd2cpan_version);
 use File::Copy;
 our ($VERSION);
-$VERSION = '0.91';
+$VERSION = '0.92';
 
 sub new {
   my $class = shift;
@@ -80,9 +80,16 @@ sub summary {
 
   my $ppds = $self->{ppds};
   foreach my $ppd(@$ppds) {
-    my $data = parse_ppd($ppd);
-    die qq{No valid ppd data available}
-      unless ($data and (ref($data) eq 'HASH'));
+    my $data;
+    eval {$data = parse_ppd($ppd);};
+    if ($@) {
+      warn qq{Error in parsing $ppd: $@};
+      next;
+    }
+    unless ($data and (ref($data) eq 'HASH')) {
+      warn qq{No valid ppd data available in $ppd};
+      next;
+    }
     foreach my $key (keys %$fhs) {
       $fhs->{$key}->{softpkg}->($fhs->{$key}->{fh}, $data);
     }

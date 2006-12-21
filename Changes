@@ -1,5 +1,15 @@
 Revision history for Perl extension PPM::Make.
 
+0.92 Thur, Dec 21, 2006
+
+  - wrap parsing of the ppd files in RepositorySummary.pm
+    around an eval, to catch errors (suggested by
+    Serguey Trouchelle)
+  - use CONTENTS exclusively in parse_bundle of Meta.pm
+    to exract contents of a Bundle file, as some Bundles
+    also include a DESCRIPTION (suggested by
+    Serguey Trouchelle)
+
 0.91 Sat, Nov 18, 2006
 
   - import HAS_PPM from PPM::Make::Config in PPM::Make::Install
