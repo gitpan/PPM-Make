@@ -4,8 +4,8 @@ use strict;
 use warnings;
 use PPM::Make::Util qw(parse_ppd ppd2cpan_version);
 use File::Copy;
-our ($VERSION);
-$VERSION = '0.92';
+
+our $VERSION = '0.93';
 
 sub new {
   my $class = shift;
@@ -16,7 +16,7 @@ sub new {
   die qq{The given repository directory "$rep" does not exist}
     unless -d $rep;
   opendir(my $dir, $rep) or die "Cannot opendir $rep: $!";
-  my @ppds = grep {$_ =~ /\.ppd$/} readdir $dir;
+  my @ppds = sort {lc $a cmp lc $b} grep {$_ =~ /\.ppd$/} readdir $dir;
   closedir($dir);
   die qq{The repository directory "$rep" contains no ppd files}
     unless (scalar @ppds > 0);

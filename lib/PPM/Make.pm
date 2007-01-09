@@ -18,8 +18,7 @@ use Pod::Html;
 use Safe;
 use File::HomeDir;
 
-our ($VERSION);
-$VERSION = '0.92';
+our $VERSION = '0.93';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;

@@ -8,8 +8,8 @@ use Config;
 use Config::IniFiles;
 use LWP::Simple qw(getstore is_success);
 
-our ($VERSION, $ERROR);
-$VERSION = '0.92';
+our ($ERROR);
+our $VERSION = '0.93';
 
 =head1 NAME
 

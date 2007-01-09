@@ -1,5 +1,8 @@
 Revision history for Perl extension PPM::Make.
 
+0.93 Tues, Jan 11, 2007
+  - sort summary files by package name
+
 0.92 Thur, Dec 21, 2006
 
   - wrap parsing of the ppd files in RepositorySummary.pm
