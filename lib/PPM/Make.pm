@@ -18,7 +18,7 @@ use Pod::Html;
 use Safe;
 use File::HomeDir;
 
-our $VERSION = '0.93';
+our $VERSION = '0.94';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -115,6 +115,7 @@ sub make_ppm {
 
   $self->{version} = $self->{args}->{VERSION}
     or warn "Could not extract version information";
+  $self->{version} =~ s/\s//g if $self->{version};
   unless ($self->{opts}->{no_html}) {
     $self->make_html() unless (-d 'blib/html' and not $force);
   }
@@ -774,7 +775,12 @@ sub upload_ppm {
       or die "Login for user $user failed: ", $ftp->message;
     $ftp->cwd($ppd_loc) or die
       "cwd to $ppd_loc failed: ", $ftp->message;
-    $ftp->ascii;
+    if ($Net::FTP::VERSION eq '2.77') {
+      $ftp->binary;
+    }
+    else {
+      $ftp->ascii;
+    }
     $ftp->put($ppd)
       or die "Cannot upload $ppd: ", $ftp->message;
     $ftp->cwd($ar_loc)

@@ -75,7 +75,7 @@ sub parse_build {
           );
   foreach (keys %r) {
       next unless $r{$_};
-      $self->{info}->{$_} ||= $r{$_};
+      $self->{info}->{$_} = $r{$_};
   }
   return 1;
 }
@@ -162,7 +162,7 @@ sub parse_make {
   die 'Cannot determine NAME in Makefile' unless $r{NAME};
   for (@wanted) {
     next unless $r{$_};
-    $self->{info}->{$_} ||= $r{$_};
+    $self->{info}->{$_} = $r{$_};
   }
   return 1;
 }

@@ -5,7 +5,7 @@ use warnings;
 use PPM::Make::Util qw(parse_ppd ppd2cpan_version);
 use File::Copy;
 
-our $VERSION = '0.93';
+our $VERSION = '0.94';
 
 sub new {
   my $class = shift;
