@@ -10,7 +10,7 @@ use PPM::Make::Meta;
 use Config;
 use Cwd;
 
-our $VERSION = '0.94';
+our $VERSION = '0.95';
 
 sub new {
   my ($class, %opts) = @_;
@@ -19,8 +19,10 @@ sub new {
   die "Must have the ppm utility to install" unless HAS_PPM;
   my $arch = $Config{archname};
   my $os = $Config{osname};
-  if (length($^V) && ord(substr($^V, 1)) >= 8) {
-    $arch .= sprintf("-%d.%d", ord($^V), ord(substr($^V, 1)));
+  if ($] >= 5.008) {
+    my $vstring = sprintf "%vd", $^V;
+    $vstring =~ s/\.\d+$//;
+    $arch .= "-$vstring";
   }
   my $has = what_have_you($opts{program}, $arch, $os);
   my $self = {

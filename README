@@ -46,9 +46,12 @@ PPM PACKAGE
     A Win32 ppm package, suitable for use with ActivePerl
     compatible Perl packages, is available at
       http://theoryx5.uwinnipeg.ca/ppmpackages/
-    for ActivePerl 6xx and at
+    for ActivePerl 6xx,
       http://theoryx5.uwinnipeg.ca/ppms/
-    for ActivePerl 8xx. 
+    for ActivePerl 8xx, and
+      http://cpan.uwinnipeg.ca/PPMPackages/10xx/
+    for ActivePerl 10xx.
+ 
 
 COPYRIGHT
     This program is copyright, 2002, 2004, 2006, by Randy Kobes

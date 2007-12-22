@@ -47,8 +47,10 @@ ok($d->{ABSTRACT}, $abstract);
 ok($d->{AUTHOR}, $author);
 ok($d->{OS}->{NAME}, $Config{osname});
 my $arch = $Config{archname};
-if (length($^V) && ord(substr($^V, 1)) >= 8) {
-   $arch .= sprintf("-%d.%d", ord($^V), ord(substr($^V, 1)));
+if ($] >= 5.008) {
+   my $vstring = sprintf "%vd", $^V;
+   $vstring =~ s/\.\d+$//;
+   $arch .= "-$vstring";
 }
 ok($d->{ARCHITECTURE}->{NAME}, $arch);
 ok($d->{CODEBASE}->{HREF}, $tgz); 

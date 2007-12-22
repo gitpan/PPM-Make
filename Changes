@@ -1,5 +1,9 @@
 Revision history for Perl extension PPM::Make.
 
+0.95 Sat, Dec 22, 2007
+  - fix architecture string addition (eg, MSWin32-x86-multi-thread-5.10)
+    so as to work with perl-5.10
+
 0.94 Sun, June 10, 2007
   - workaround for  a bug in Net::FTP 2.77, which drops the last 
     character on each line when putting file in ASCII mode (provided 

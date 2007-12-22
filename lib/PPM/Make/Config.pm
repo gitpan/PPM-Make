@@ -9,7 +9,7 @@ use Config::IniFiles;
 use LWP::Simple qw(getstore is_success);
 
 our ($ERROR);
-our $VERSION = '0.94';
+our $VERSION = '0.95';
 
 =head1 NAME
 
@@ -191,8 +191,10 @@ sub arch_and_os {
   else {
     $arch = $Config{archname};
     unless ($opt_noas) {
-      if (length($^V) && ord(substr($^V, 1)) >= 8) {
-	$arch .= sprintf("-%d.%d", ord($^V), ord(substr($^V, 1)));
+      if ($] >= 5.008) {
+	my $vstring = sprintf "%vd", $^V;
+	$vstring =~ s/\.\d+$//;
+	$arch .= "-$vstring";
       }
     }
   }
