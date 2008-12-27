@@ -9,7 +9,7 @@ use Config::IniFiles;
 use LWP::Simple qw(getstore is_success);
 
 our ($ERROR);
-our $VERSION = '0.95';
+our $VERSION = '0.96';
 
 =head1 NAME
 
@@ -139,7 +139,7 @@ sub check_opts {
     map {$_ => 1} qw(force ignore binary zip_archive remove program cpan
                      dist script exec os arch arch_sub add no_as vs upload
                      no_case no_cfg vsr vsp zipdist no_ppm4 no_html
-		     reps no_upload skip);
+		     reps no_upload skip cpan_meta);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_'\n";
@@ -331,7 +331,7 @@ sub what_have_you {
 	$Config{gzip} || which('gzip') || $CPAN::Config->{gzip};
     }
     else {
-      my $atv = $Archive::Tar::VERSION + 0;
+      my $atv = mod_version('Archive::Tar');
       if (not WIN32 or (WIN32 and $atv >= 1.08)) {
         $has{tar} = 'Archive::Tar';
         $has{gzip} = 'Compress::Zlib';
@@ -358,7 +358,7 @@ sub what_have_you {
 	$Config{unzip} || which('unzip') || $CPAN::Config->{unzip};
     }
     else {
-      my $zipv = $Archive::Zip::VERSION + 0;
+      my $zipv = mod_version('Archive::Zip');
       if ($zipv >= 1.02) {
 	require Archive::Zip; import Archive::Zip qw(:ERROR_CODES);
 	$has{zip} = 'Archive::Zip';
@@ -450,6 +450,17 @@ sub fetch_nmake {
   }
   unlink $nmake or warn "Unlink of $nmake failed: $!";
   return which($exe);
+}
+
+sub mod_version {
+  my $mod = shift;
+  eval "require $mod";
+  return if $@;
+  my $mv = eval "$mod->VERSION";
+  return 0 if $@;
+  $mv =~ s/_.*$//x;
+  $mv += 0;
+  return $mv;
 }
 
 sub path_ext {

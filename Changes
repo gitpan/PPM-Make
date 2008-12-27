@@ -1,5 +1,19 @@
 Revision history for Perl extension PPM::Make.
 
+0.96 Fri, Dec 26, 2008
+  - if distro misses NAME, use DISTNAME if available (patch provided by 
+    Serguei Trouchelle)
+  - fix problem with v-style versions of modules when creating PPD 
+    and tgz/zip bundle with --vsr (patch provided by Serguei Trouchelle)
+  - omit warning when development version of Archive::Tar is used (patch 
+    provided by Serguei Trouchelle).
+  - refactor searching for ppm info into PPM::Make::Search
+  - use META information available from http://cpan.uwinnipeg.ca/
+    so that SOAP::Lite isn't required
+  - add the make_ppm_install script, and associated module
+    PPM::Make::CPAN, for use as the make_install_make_command
+    within CPAN.pm to install modules via ppm.
+
 0.95 Sat, Dec 22, 2007
   - fix architecture string addition (eg, MSWin32-x86-multi-thread-5.10)
     so as to work with perl-5.10

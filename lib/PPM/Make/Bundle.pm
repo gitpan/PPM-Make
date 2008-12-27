@@ -10,9 +10,10 @@ use Config qw(myconfig %Config);
 use PPM::Make;
 use PPM::Make::Util qw(:all);
 use PPM::Make::Config qw(:all);
+use PPM::Make::Search;
 use LWP::Simple;
 
-our $VERSION = '0.95';
+our $VERSION = '0.96';
 
 my @cpan_mirrors = url_list();
 my $protocol = qr{^(http|ftp)://};
@@ -40,13 +41,15 @@ sub new {
     }
   }
   my $opts = %cfg ? merge_opts(\%cfg, \%opts) : \%opts;
+  my $search = PPM::Make::Search->new();
 
   my $cwd = cwd;
   my $build_dir = catdir(tmpdir, "ppm_make-$$");
   mkdir $build_dir or die qq{Cannot mkdir $build_dir: $!};
   my $self = {cwd => $cwd, opts => $opts, files => {}, name => '',
 	      build_dir => $build_dir, has => $has, zipdist => $bundle_name,
-	      clean => $clean, arch => $arch, os => $os};
+	      clean => $clean, arch => $arch, os => $os,
+	      search => $search};
   bless $self, $class;
 }
 
@@ -110,16 +113,19 @@ sub make_package {
 sub get_info {
   my ($self, $dist) = @_;
   return if (-f $dist or $dist =~ /^$protocol/ or $dist =~ /$ext$/);
-  (my $query = $dist) =~ s{::}{-}g;
-  my $results = dist_search($query);
-  unless ($results) {
-    $query =~ s{-}{::}g;
-    $results = mod_search($query);
+  my $search = $self->{search};
+  $dist =~ s{::}{-}g;
+  if ($search->search($dist, mode => 'dist')) {
+    my $results = $search->{dist_results}->{$dist};
+    my $cpan_file = cpan_file($results->{cpanid}, $results->{dist_file});
+    my $info = {cpan_file => $cpan_file, dist_name => $results->{dist_name}};
+    return $info;
   }
-  return unless $results;
-  my $cpan_file = cpan_file($results->{cpanid}, $results->{dist_file});
-  my $info = {cpan_file => $cpan_file, dist_name => $results->{dist_name}};
-  return $info;
+  else {
+    $search->search_error();
+    warn qq{Cannot obtain information on '$dist'};
+    return;
+  }
 }
 
 sub from_cpan {

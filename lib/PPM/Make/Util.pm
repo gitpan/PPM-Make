@@ -33,24 +33,25 @@ This module contains a number of utility functions used by PPM::Make.
 
 =cut
 
-our $VERSION = '0.95';
+our $VERSION = '0.96';
 
 my %encode = ('&' => '&amp;', '>' => '&gt;',
 	      '<' => '&lt;', '"' => '&quot;');
 
 use base qw(Exporter);
 
-our (@EXPORT_OK, %EXPORT_TAGS, $protocol, $ext, $src_dir, $build_dir, $ERROR);
+our (@EXPORT_OK, %EXPORT_TAGS, $protocol, $ext, $src_dir, $build_dir,
+     @url_list, $ERROR);
 $protocol = qr{^(http|ftp)://};
 $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)};
-my @url_list = url_list();
+@url_list = url_list();
 
 my @exports = qw(load_cs verifyMD5 xml_encode parse_version $ERROR
                  is_core is_ap_core url_list
-		 trim parse_ppd parse_ppm parse_abstract
+		 trim parse_ppd parse_abstract
                  ppd2cpan_version cpan2ppd_version tempfile
-                 mod_search dist_search file_to_dist cpan_file
-                 fetch_file fix_path);
+                 file_to_dist cpan_file fix_path
+		 $src_dir $build_dir @url_list);
 
 %EXPORT_TAGS = (all => [@exports]);
 @EXPORT_OK = (@exports);
@@ -316,7 +317,7 @@ sub cpan2ppd_version {
 
 =item parse_ppd
 
-Parse a I<ppd> file.
+Parse a I<ppd> file or a string.
 
   my $ppd = 'package.ppd';
   my $d = parse_ppd($ppd);
@@ -326,10 +327,11 @@ Parse a I<ppd> file.
   my $e = parse_ppd($ppd, 'MSWin32-x86-multi-thread');
   print $e->{ABSTRACT};
 
-This routine takes a required argument of a I<ppd> file and,
+This routine takes a required argument of a I<ppd> file containing
+a I<.ppd> extension or a string and,
 optionally, an ARCHITECTURE name to restrict the results to.
 It returns a data structure containing the information of 
-the ppd file:
+the ppd file or string:
 
     $d->{SOFTPKG}->{NAME}
     $d->{SOFTPKG}->{VERSION}
@@ -338,6 +340,7 @@ the ppd file:
     $d->{ABSTRACT}
     $d->{PROVIDE}
     $d->{DEPENDENCY}
+    $d->{REQUIRE}
     $d->{OS}->{NAME}
     $d->{ARCHITECTURE}->{NAME}
     $d->{CODEBASE}->{HREF}
@@ -345,7 +348,7 @@ the ppd file:
     $d->{INSTALL}->{SCRIPT}
     $d->{INSTALL}->{HREF}
 
-The I<PROVIDE> and I<DEPENDENDENCY> tags are array references
+The I<PROVIDE>, I<REQUIRE> and I<DEPENDENDENCY> tags are array references
 containing lists of, respectively, the prerequisites required and 
 the modules supplied by the package, with keys of I<NAME> and
 I<VERSION>.
@@ -365,9 +368,12 @@ my $i;
 sub parse_ppd {
   my $file = shift;
   my $arch = shift;
-  unless (-e $file) {
+  my $is_a_file = ($file =~ /\.ppd/);
+  if ($is_a_file) {
+    unless (-e $file) {
       $ERROR = qq{$file not found.};
       return;
+    }
   }
   my $p = XML::Parser->new(Style => 'Subs',
 			   Handlers => {Char => \&ppd_char,
@@ -377,12 +383,13 @@ sub parse_ppd {
 					Final => \&ppd_final,
 				       },
 			  );
-  my $d = $p->parsefile($file);
+  my $d = $is_a_file ? $p->parsefile($file) : $p->parse($file);
   my $implem = $d->{IMPLEMENTATION};
   my $size = scalar @$implem;
   if ($size == 1) {
     $d->{PROVIDE} = $implem->[0]->{PROVIDE} || [];
     $d->{DEPENDENCY} = $implem->[0]->{DEPENDENCY} || [];
+    $d->{REQUIRE} = $implem->[0]->{DEPENDENCY} || [];
     $d->{OS}->{NAME} = $implem->[0]->{OS}->{NAME} || '';
     $d->{ARCHITECTURE}->{NAME} = $implem->[0]->{ARCHITECTURE}->{NAME} || '';
     $d->{CODEBASE}->{HREF} = $implem->[0]->{CODEBASE}->{HREF};
@@ -402,6 +409,7 @@ sub parse_ppd {
     return unless $flag;
     $d->{PROVIDE} = $implem->[$i]->{PROVIDE} || [];
     $d->{DEPENDENCY} = $implem->[$i]->{DEPENDENCY} || [];
+    $d->{REQUIRE} = $implem->[$i]->{DEPENDENCY} || [];
     $d->{OS}->{NAME} = $implem->[$i]->{OS}->{NAME} || '';
     $d->{ARCHITECTURE}->{NAME} = $implem->[$i]->{ARCHITECTURE}->{NAME} || '';
     $d->{CODEBASE}->{HREF} = $implem->[$i]->{CODEBASE}->{HREF};
@@ -426,6 +434,7 @@ sub ppd_init {
 		      ARCHITECTURE => {NAME => ''},
 		      CODEBASE => {HREF => ''},
 		      DEPENDENCY => [],
+		      REQUIRE => [],
 		      INSTALL => {EXEC => '', SCRIPT => '', HREF => ''},
 		      wanted => {TITLE => 1, ABSTRACT => 1, AUTHOR => 1},
 		      _current => '',
@@ -478,20 +487,22 @@ sub ppd_start {
       last SWITCH;
     };
     ($tag eq 'DEPENDENCY') and do {
-      push @{$internal->{IMPLEMENTATION}->[$i]->{DEPENDENCY}}, 
+      push @{$internal->{IMPLEMENTATION}->[$i]->{DEPENDENCY}},
 	{NAME => $attrs{NAME}, VERSION => $attrs{VERSION}};
       last SWITCH;
     };
-    
+    ($tag eq 'REQUIRE') and do {
+      push @{$internal->{IMPLEMENTATION}->[$i]->{REQUIRE}},
+	{NAME => $attrs{NAME}, VERSION => $attrs{VERSION}};
+      last SWITCH;
+    };
   }
 }
 
 sub ppd_char {
   my ($self, $string) = @_;
-  
   my $internal = $self->{_mydata};
   my $tag = $internal->{_current};
-  
   if ($tag and $internal->{wanted}->{$tag}) {
     $internal->{$tag} .= xml_encode($string);
   }
@@ -499,7 +510,6 @@ sub ppd_char {
     $internal->{IMPLEMENTATION}->[$i]->{INSTALL}->{SCRIPT} .= $string;
   }
   else {
-    
   }
 }
 
@@ -512,90 +522,6 @@ sub ppd_end {
 sub ppd_final {
   my $self = shift;
   return $self->{_mydata};
-}
-
-
-sub parse_ppm {
-  my $file = $PPM::PPMdat;
-  unless (-e $file) {
-    $ERROR = qq{$file not found.};
-    return;
-  }
-  my $p = XML::Parser->new(Style => 'Subs',
-			   Handlers => {Char => \&ppm_char,
-					Start => \&ppm_start,
-					End => \&ppm_end,
-					Init => \&ppm_init,
-					Final => \&ppm_final,
-				       },
-			  );
-  my $d = $p->parsefile($file);
-  return $d;
-}
-
-sub ppm_init {
-  my $self = shift;
-  $self->{_mydata} = {
-		      PPMVER => '',
-		      OPTIONS => {BUILDDIR => '', CLEAN => ''},
-		      wanted => {PPMVER => 1},
-		      _current => '',
-		     };
-}
-
-sub ppm_start {
-  my ($self, $tag, %attrs) = @_;
-  my $internal = $self->{_mydata};
-  $internal->{_current} = $tag;
-  
- SWITCH: {
-    ($tag eq 'OPTIONS') and do {
-      $internal->{OPTIONS}->{BUILDDIR} = $attrs{BUILDDIR};
-      $internal->{OPTIONS}->{CLEAN} = $attrs{CLEAN};
-      last SWITCH;
-    };
-    
-  }
-}
-
-sub ppm_char {
-  my ($self, $string) = @_;
-  
-  my $internal = $self->{_mydata};
-  my $tag = $internal->{_current};
-  
-  if ($tag and $internal->{wanted}->{$tag}) {
-    $internal->{$tag} .= xml_encode($string);
-  }
-}
-
-sub ppm_end {
-  my ($self, $tag) = @_;
-  delete $self->{_mydata}->{_current};
-}
-
-sub ppm_final {
-  my $self = shift;
-  return $self->{_mydata};
-}
-
-sub make_info_soap {
-  unless (eval { require SOAP::Lite }) {
-    $ERROR = "SOAP::Lite is unavailable to make remote call.";
-    return;
-  }
-
-  return SOAP::Lite
-    ->uri($info_uri)
-      ->proxy($info_proxy,
-	      options => {compress_threshold => 10000})
-	->on_fault(sub { my($soap, $res) = @_; 
-			 warn "SOAP Fault: ", 
-                           (ref $res ? $res->faultstring 
-                            : $soap->transport->status),
-                              "\n";
-                         return undef;
-		       });
 }
 
 =item src_and_build
@@ -719,249 +645,6 @@ sub parse_abstract {
   return $result;
 }
 
-=item mod_search
-
-Uses a remote soap server or CPAN.pm to perform a module search.
-
-  my $mod = 'Net::FTP';
-  my $results = mod_search($mod);
-
-The query term must match exactly, in a case
-sensitive manner. The results are returned as a hash reference 
-of the form
-
-  print <<"END";
-    Module: $results->{mod_name}
-    Version: $results->{mod_vers}
-    Description: $results->{mod_abs}
-    Author: $results->{author}
-    CPAN file: $results->{dist_file}
-    Distribution: $results->{dist_name}
-  END
-
-Not all fields are guaranteed to have a value.
-
-If an array reference is passed to C<mod_search> containing
-a list of modules to be queried, a corresponding
-hash reference is returned, the keys being the query terms
-and the values being a hash reference as above.
-
-=cut
-
-sub mod_search {
-  my ($query, %args) = @_;
-  my $results = soap_mod_search($query, %args);
-  return $results if $results;
-  warn $ERROR if $ERROR;
-  return unless HAS_CPAN;
-  return cpan_mod_search($query, %args);
-}
-
-sub cpan_mod_search {
-  my ($query, %args) = @_;
-  my $ref = ref($query) eq 'ARRAY' ? 1 : 0;
-  my @mods = $ref ? (@$query) : ($query);
-  my $results;
-  foreach my $m (@mods) {
-    my @objs = CPAN::Shell->expand('Module', qq{/$m/});
-    unless (@objs > 0) {
-      $ERROR = "No results found for $query";
-      return;
-    }
-    my $mods;
-    foreach my $obj(@objs) {
-      my $string = $obj->as_string;
-      my $mod;
-      if ($string =~ /id\s*=\s*(.*?)\n/m) {
-        $mod = $1;
-        next unless $mod;
-      }
-      next unless $mod eq $m;
-      $mods->{mod_name} = $mod;
-      if (my $v = $obj->cpan_version) {
-        $mods->{mod_vers} = $v;
-      }
-      if ($string =~ /\s+DESCRIPTION\s+(.*?)\n/m) {
-        $mods->{mod_abs} = $1;
-      }
-      if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
-        $mods->{author} = $1;
-	$mods->{cpanid} = $mods->{author};
-      }
-      if ($string =~ /\s+CPAN_FILE\s+(\S+)\n/m) {
-        $mods->{dist_file} = $1;
-      }
-      $mods->{dist_name} = file_to_dist($mods->{dist_file});
-      last;
-    }
-    if ($ref) {
-      $results->{$m} = $mods; 
-    }
-    else {
-      $results = $mods;
-      last;
-    }
-  }
-  return $results;
-}
-
-sub soap_mod_search {
-  my ($query, %args) = @_;
-  return unless (my $soap = make_info_soap());
-  my $result = $soap->mod_info($query);
-  eval {$result->fault};
-  if ($@) {
-      $ERROR = $@;
-      return;
-  }
-  $result->fault and do {
-      $ERROR = join ', ', 
-          $result->faultcode, 
-              $result->faultstring;
-      return;
-  };
-  my $results = $result->result();
-  if ($results) {
-    if (ref($query) eq 'ARRAY') {
-      foreach my $entry (keys %$results) {
-        my $info = $results->{$entry};
-        my $email = $info->{email} || $info->{cpanid} . '@cpan.org';
-        $info->{author} = $info->{fullname} . qq{ &lt;$email&gt; };
-      }
-    }
-    else {
-      my $email = $results->{email} || $results->{cpanid} . '@cpan.org';
-      $results->{author} = $results->{fullname} . qq{ &lt;$email&gt;};
-    }
-  }
-  else {
-    $ERROR = qq{No results for "$query" were found}
-  };
-  return $results;
-}
-
-=item dist_search
-
-Uses a remote soap server or CPAN.pm to perform a distribution search.
-
-  my $dist = 'libnet';
-  my $results = dist_search($dist);
-
-The query term must match exactly, in a case
-sensitive manner. The results are returned as a hash reference 
-of the form
-
-  print <<"END";
-    Distribution: $results->{dist_name}
-    Version: $results->{dist_vers}
-    Description: $results->{dist_abs}
-    Author: $results->{author}
-    CPAN file: $results->{dist_file}
-  END
-
-Not all fields are guaranteed to have a value.
-
-If an array reference is passed to C<dist_search> with a list
-of distributions to be queried, a corresponding
-hash reference is returned, the keys being the query terms
-and the values being a hash reference as above.
-
-=cut
-
-sub dist_search {
-  my ($query, %args) = @_;
-  my $results = soap_dist_search($query, %args);
-  return $results if $results;
-  warn $ERROR if $ERROR;
-  return unless HAS_CPAN;
-  return cpan_dist_search($query, %args);
-}
-
-sub cpan_dist_search {
-  my ($query, %args) = @_;
-  my $ref = ref($query) eq 'ARRAY' ? 1 : 0;
-  my @dists = $ref ? (@$query) : ($query);
-  my $results;
-  foreach my $d (@dists) {
-    my $dists;
-    foreach my $match (CPAN::Shell->expand('Distribution', qq{/$d/})) {
-      my $string = $match->as_string;
-      my $cpan_file;
-      if ($string =~ /id\s*=\s*(.*?)\n/m) {
-	$cpan_file = $1;
-	next unless $cpan_file;
-      }
-      my ($dist, $version) = file_to_dist($cpan_file);
-      next unless $dist eq $d;
-      $dists->{dist_name} = $dist;
-      $dists->{dist_file} = $cpan_file;
-      $dists->{dist_vers} = $version;
-      if ($string =~ /\s+CPAN_USERID.*\s+\((.*)\)\n/m) {
-	$dists->{author} = $1;
-	$dists->{cpanid} = $dists->{author};
-      }
-      my $mods;
-      if ($string =~ /\s+CONTAINSMODS\s+(.*)/m) {
-	$mods = $1;
-      }
-      next unless $mods;
-      my @mods = split ' ', $mods;
-      next unless @mods;
-      (my $try = $dist) =~ s{-}{::}g;
-      foreach my $mod(@mods) {
-	my $module = CPAN::Shell->expand('Module', $mod);
-	next unless $module;
-	if ($mod eq $try) {
-	  my $desc = $module->description;
-	  $dists->{dist_abs} = $desc if $desc;
-	}
-	my $v = $module->cpan_version;
-	$v = undef if $v eq 'undef';
-	if ($v) {
-	  push @{$dists->{mods}}, {mod_name => $mod, mod_vers => $v};
-	}
-	else {
-	  push @{$dists->{mods}}, {mod_name => $mod};	
-	}
-      }
-    }
-    if ($ref) {
-      $results->{$d} = $dists;
-    }
-    else {
-      $results = $dists;
-      last;
-    }
-  }
-  return $results;
-}
-
-sub soap_dist_search {
-  my ($query, %args) = @_;
-  return unless (my $soap = make_info_soap());
-  my $result = $soap->dist_info($query);
-  eval {$result->fault};
-  if ($@) {
-      $ERROR = $@;
-      return;
-  }
-  $result->fault and do {
-    $ERROR = join ', ', 
-      $result->faultcode, 
-        $result->faultstring;
-    return;
-  };
-  my $results = $result->result();
-  if ($results) {
-    my $email = $results->{email} || $results->{cpanid} . '@cpan.org';
-    $results->{author} = $results->{fullname} . qq{ &lt;$email&gt; };
-  }
-  else {
-    $ERROR = qq{No results for "$query" were found}
-  };
-  return $results;
-}
-
 =item cpan_file {
 
 Given a file of the form C<file.tar.gz> and a CPAN id
@@ -978,121 +661,6 @@ sub cpan_file {
   my ($cpanid, $file) = @_;
   (my $cpan_loc = $cpanid) =~ s{^(\w)(\w)(.*)}{$1/$1$2/$1$2$3};
   return qq{$cpan_loc/$file};
-}
-
-=item fetch_file
-
-Fetches a file, and if successful, returns the stored filename. 
-If the file is specified beginning with I<http://> or I<ftp://>:
-
-  my $fetch = 'http://my.server/my_file.tar.gz';
-  my $filename = fetch_file($file);
-
-will grab this file directly. Otherwise, if the file is
-specified with an absolute path name, has
-an extension I<\.(tar\.gz|tgz|tar\.Z|zip)>, and if the file
-exists locally, it will use that; otherwise, it will assume
-this is a CPAN distribution and grab it from a CPAN mirror:
-
-  my $dist = 'A/AB/ABC/file.tar.gz';
-  my $filename = fetch_file($dist);
-
-which assumes the file lives under I<$CPAN/authors/id/>. If
-neither of the above are satisfied, it will assume this
-is, first of all, a module name, and if not found, a distribution
-name, and if found, will fetch the corresponding CPAN distribution.
-
-  my $mod = 'Net::FTP';
-  my $filename = fetch_file($mod);
-
-=cut
-
-sub fetch_file {
-  my ($dist, $no_case) = @_;
-  my $to;
-  if (-f $dist) {
-    $to = basename($dist, $ext);
-    unless ($dist eq $to) {
-      copy($dist, $to) or die "Cannot cp $dist to $to: $!";
-    }
-    return $to;
-  }
-  if ($dist =~ m!$protocol!) {
-    ($to = $dist) =~ s!.*/(.*)!$1!;
-    print "Fetching $dist ....\n";
-    my $rc = is_success(getstore($dist, $to));
-    unless ($rc) {
-      $ERROR = qq{Fetch of $dist failed.};
-      return;
-    }
-    return $to;
-  }
-  unless ($dist =~ /$ext$/) {
-    my $mod = $dist;
-    $mod =~ s!-!::!g;
-    my $results = mod_search($mod);
-    unless ($results) {
-      $mod =~ s!::!-!g;
-      $results = dist_search($mod);
-    }
-    unless ($results->{cpanid} and $results->{dist_file}) {
-      $ERROR = qq{Cannot get distribution name of '$mod'};
-      return;
-    }
-    $dist = cpan_file($results->{cpanid}, $results->{dist_file});
-  }
-  my $id = dirname($dist);
-  $to = basename($dist, $ext);
-  my $src = HAS_CPAN ? 
-    File::Spec->catdir($src_dir, 'authors/id', $id) : 
-        $src_dir;
-  my $CS = 'CHECKSUMS';
-  my $get_cs = 0;
-  for my $file( ($to, $CS)) {
-    my $local = File::Spec->catfile($src, $file);
-    if (-e $local and $src_dir ne $build_dir and not $get_cs) {
-      copy($local, '.') or do {
-        $ERROR = "Cannot copy $local: $!";
-        return;
-      };
-      next;
-    }
-    else {
-      my $from;
-      $get_cs = 1;
-      foreach my $url(@url_list) {
-        $url =~ s!/$!!;
-        $from = $url . '/authors/id/' . $id . '/' . $file;
-        print "Fetching $from ...\n";
-        last if is_success(getstore($from, $file));
-      }
-      unless (-e $file) {
-        $ERROR = "Fetch of $file from $from failed";
-        return;
-      }
-      if ($src_dir ne $build_dir) {
-        unless (-d $src) {
-          mkpath($src) or do {
-            $ERROR = "Cannot mkdir $src: $!";
-            return;
-          };
-        }
-        copy($file, $src) or warn "Cannot copy $to to $src: $!";
-      }
-    }
-  }
-  return $to unless $to =~ /$ext$/;
-  my $cksum;
-  unless ($cksum = load_cs($CS)) {
-    $ERROR = qq{Checksums check disabled - cannot load $CS file.};
-    return;
-  }
-  unless (verifyMD5($cksum, $to)) {
-    $ERROR =  qq{Checksums check for "$to" failed.};
-    return;
-  }
-  unlink $CS or warn qq{Cannot unlink "$CS": $!\n};
-  return $to;
 }
 
 =item url_list

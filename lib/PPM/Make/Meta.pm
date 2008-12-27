@@ -8,15 +8,18 @@ require File::Spec;
 use Safe;
 use YAML qw(LoadFile);
 
-our $VERSION = '0.95';
+our $VERSION = '0.96';
 
 sub new {
   my ($class, %opts) = @_;
   my $cwd = $opts{dir};
+  my $search = $opts{search};
   die qq{Please supply the name of the directory} unless $cwd;
   die qq{The supplied directory "$cwd" doesn't exist} unless -d $cwd;
+  die qq{Please supply a PPM::Make::Search object}
+    unless (defined $search and (ref($search) eq 'PPM::Make::Search'));
   my $self = {info => {}, cwd => $cwd,
-	      dist_search => undef, mod_search => undef};
+	      search => $search};
   bless $self, $class;
 }
 
@@ -63,7 +66,7 @@ sub parse_build {
     die "Can't do $file: $!" unless defined $r;
     die "Can't run $file" unless $r;
   }
-  
+
   my $props = $r->[2];
   my %r = ( NAME => $props->{module_name},
             DISTNAME => $props->{dist_name},
@@ -159,7 +162,15 @@ sub parse_make {
   my $c = new Safe();
   my %r = $c->reval($make);
   die "Eval of Makefile failed: $@" if ($@);
-  die 'Cannot determine NAME in Makefile' unless $r{NAME};
+  unless ($r{NAME}) {
+    if ($r{NAME} = $r{DISTNAME}) {
+      $r{NAME} =~ s/-/::/gx;
+      warn 'Cannot determine NAME, using DISTNAME instead';
+    } 
+    else {
+      die 'Cannot determine NAME and DISTNAME in Makefile';
+    }
+  }
   for (@wanted) {
     next unless $r{$_};
     $self->{info}->{$_} = $r{$_};
@@ -212,6 +223,7 @@ sub guess_abstract {
   my $self = shift;
   my $info = $self->{info};
   my $cwd = $self->{cwd};
+  my $search = $self->{search};
   my $result;
   for my $guess(qw(ABSTRACT_FROM VERSION_FROM)) {
     if (my $file = $info->{$guess}) {
@@ -237,23 +249,39 @@ sub guess_abstract {
   }
   if (my $try = $info->{NAME} || $info->{DISTNAME}) {
     $try =~ s{-}{::}g;
-    my $mod_search;
-    unless ($mod_search = $self->{mod_search}) {
-      $mod_search = mod_search($try);
-      $self->{mod_search} = $mod_search if $mod_search;
+    my $mod_results = $search->{mod_results};
+    if (defined $mod_results and defined $mod_results->{$try}) {
+      return $mod_results->{$try}->{mod_abs}
+	if defined $mod_results->{$try}->{mod_abs};
     }
-    return $mod_search->{mod_abs}
-      if ($mod_search and defined $mod_search->{mod_abs});
+    if ($search->search($try, mode => 'mod')) {
+      $mod_results = $search->{mod_results};
+      if (defined $mod_results and defined $mod_results->{$try}) {
+	return $mod_results->{$try}->{mod_abs}
+	  if defined $mod_results->{$try}->{mod_abs};
+      }
+    }
+    else {
+      $search->search_error();
+    }
   }
   if (my $try = $info->{NAME} || $info->{DISTNAME}) {
     $try =~ s{::}{-}g;
-    my $dist_search;
-    unless ($dist_search = $self->{dist_search}) {
-      $dist_search = dist_search($try);
-      $self->{dist_search} = $dist_search if $dist_search;
+    my $dist_results = $search->{dist_results};
+    if (defined $dist_results and defined $dist_results->{$try}) {
+      return $dist_results->{$try}->{dist_abs}
+	if defined $dist_results->{$try}->{dist_abs};
     }
-    return $dist_search->{dist_abs}
-      if ($dist_search and defined $dist_search->{dist_abs});
+    if ($search->search($try, mode => 'dist')) {
+      $dist_results = $search->{dist_results};
+      if (defined $dist_results and defined $dist_results->{$try}) {
+	return $dist_results->{$try}->{dist_abs}
+	  if defined $dist_results->{$try}->{dist_abs};
+      }
+    }
+    else {
+      $search->search_error();
+    }
   }
   return;
 }
@@ -342,26 +370,43 @@ sub author {
 sub guess_author {
   my $self = shift;
   my $info = $self->{info};
+  my $search = $self->{search};
   my $results;
-  if (my $try = $info->{NAME}) {
+  if (my $try = $info->{NAME} || $info->{DISTNAME}) {
     $try =~ s{-}{::}g;
-    my $mod_search;
-    unless ($mod_search = $self->{mod_search}) {
-      $mod_search = mod_search($try);
-      $self->{mod_search} = $mod_search if $mod_search;
+    my $mod_results = $search->{mod_results};
+    if (defined $mod_results and defined $mod_results->{$try}) {
+      return $mod_results->{$try}->{author}
+	if defined $mod_results->{$try}->{author};
     }
-    return $mod_search->{author}
-      if ($mod_search and defined $mod_search->{author});
+    if ($search->search($try, mode => 'mod')) {
+      $mod_results = $search->{mod_results};
+      if (defined $mod_results and defined $mod_results->{$try}) {
+	return $mod_results->{$try}->{author}
+	  if defined $mod_results->{$try}->{author};
+      }
+    }
+    else {
+      $search->search_error();
+    }
   }
   if (my $try = $info->{DISTNAME} || $info->{NAME}) {
     $try =~ s{::}{-}g;
-    my $dist_search;
-    unless ($dist_search = $self->{dist_search}) {
-      $dist_search = dist_search($try);
-      $self->{dist_search} = $dist_search if $dist_search;
+    my $dist_results = $search->{dist_results};
+    if (defined $dist_results and defined $dist_results->{$try}) {
+      return $dist_results->{$try}->{author}
+	if defined $dist_results->{$try}->{author};
     }
-    return $dist_search->{author}
-      if ($dist_search and defined $dist_search->{author});
+    if ($search->search($try, mode => 'dist')) {
+      $dist_results = $search->{dist_results};
+      if (defined $dist_results and defined $dist_results->{$try}) {
+	return $dist_results->{$try}->{author}
+	  if defined $dist_results->{$try}->{author};
+      }
+    }
+    else {
+      $search->search_error();
+    }
   }
   return;
 }

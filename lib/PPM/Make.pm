@@ -4,6 +4,7 @@ use warnings;
 use PPM::Make::Config qw(:all);
 use PPM::Make::Util qw(:all);
 use PPM::Make::Meta;
+use PPM::Make::Search;
 use Cwd;
 use Pod::Find qw(pod_find contains_pod);
 use File::Basename;
@@ -17,8 +18,9 @@ require File::Spec;
 use Pod::Html;
 use Safe;
 use File::HomeDir;
+use version;
 
-our $VERSION = '0.95';
+our $VERSION = '0.96';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -45,6 +47,7 @@ sub new {
   my $opts = %cfg ? merge_opts(\%cfg, \%opts) : \%opts;
 
   $no_case = 1 if defined $opts->{no_case};
+  my $search = PPM::Make::Search->new();
   my $self = {
 	      opts => $opts || {},
 	      cwd => '',
@@ -59,8 +62,9 @@ sub new {
               use_mb => '',
 	      ARCHITECTURE => $arch,
 	      OS => $os,
-	      mod_search => undef,
-	      dist_search => undef,
+	      cpan_meta => $opts->{cpan_meta},
+	      search => $search,
+	      fetch_error => '',
 	     };
   bless $self, $class;
 }
@@ -72,10 +76,11 @@ sub make_ppm {
          and not $self->{has}->{zip});
   my $dist = $self->{opts}->{dist};
   if ($dist) {
-    my $build_dir = $PPM::Make::Util::build_dir;
+    my $build_dir = File::Spec->tmpdir;
     chdir $build_dir or die "Cannot chdir to $build_dir: $!";
     print "Working directory: $build_dir\n"; 
-    die $ERROR unless ($dist = fetch_file($dist, no_case => $no_case));
+    die $self->{fetch_error} 
+      unless ($dist = $self->fetch_file($dist, no_case => $no_case));
 #      if ($dist =~ m!$protocol! 
 #          or $dist =~ m!^\w/\w\w/! or $dist !~ m!$ext!);
     print "Extracting files from $dist ....\n";
@@ -95,12 +100,13 @@ sub make_ppm {
   $self->check_script() if $self->{opts}->{script};
   $self->check_files() if $self->{opts}->{add};
   $self->adjust_binary() if $self->{opts}->{arch_sub};
-  $self->build_dist() 
+  $self->build_dist()
     unless (-d 'blib' and 
 	    (-f 'Makefile' or ($mb and -f 'Build' and -d '_build')) 
             and not $force);
 
-  my $meta = PPM::Make::Meta->new(dir => $self->{cwd});
+  my $meta = PPM::Make::Meta->new(dir => $self->{cwd},
+				  search => $self->{search});
   die qq{Creating PPM::Make::Meta object failed}
     unless ($meta and (ref($meta) eq 'PPM::Make::Meta'));
   $meta->meta();
@@ -108,14 +114,15 @@ sub make_ppm {
     next unless defined $meta->{info}->{$key};
     $self->{args}->{$key} ||= $meta->{info}->{$key};
   }
-  for my $search_info(qw(dist_search mod_search)) {
-    next unless defined $meta->{$search_info};
-    $self->{$search_info} = $meta->{$search_info};
-  }
 
-  $self->{version} = $self->{args}->{VERSION}
-    or warn "Could not extract version information";
-  $self->{version} =~ s/\s//g if $self->{version};
+  if ($self->{version} = $self->{args}->{VERSION}) {
+    my $version = version->new($self->{version});
+    $self->{version} = $version;
+    $self->{version} =~ s/^v//x;
+  } 
+  else {
+    warn "Could not extract version information";
+  }
   unless ($self->{opts}->{no_html}) {
     $self->make_html() unless (-d 'blib/html' and not $force);
   }
@@ -513,7 +520,7 @@ sub make_ppd {
   my $d;
   
   $d->{SOFTPKG}->{NAME} = $d->{TITLE} = $name;
-  $d->{SOFTPKG}->{VERSION} = cpan2ppd_version($self->{version});
+  $d->{SOFTPKG}->{VERSION} = cpan2ppd_version($self->{version} || 0);
   $d->{OS}->{NAME} = $os if $os;
   $d->{ARCHITECTURE}->{NAME} = $arch if $arch;
   $d->{ABSTRACT} = $args->{ABSTRACT};
@@ -537,48 +544,59 @@ sub make_ppd {
     }
   }
 
-  my ($dist_search, $mods);
-  unless ($dist_search = $self->{dist_search}) {
-    $dist_search = dist_search($name);
-    $self->{dist_search} = $dist_search if $dist_search;
-  }
-  $mods = $dist_search->{mods} if $dist_search;
-  if ($mods and (ref($mods) eq 'ARRAY')) {
-    foreach my $mod (@$mods) {
-      my $mod_name = $mod->{mod_name};
-      next unless $mod_name;
-      my $mod_vers = $mod->{mod_vers};
-      $mod_name .= '::' unless ($mod_name =~ /::/);
-      push @{$d->{PROVIDE}}, {NAME => $mod_name, VERSION => $mod_vers};
+  my $search = $self->{search};
+  if ($search->search($name, mode => 'dist')) {
+    my $mods = $search->{dist_results}->{$name}->{mods};
+    if ($mods and (ref($mods) eq 'ARRAY')) {
+      foreach my $mod (@$mods) {
+	my $mod_name = $mod->{mod_name};
+	next unless $mod_name;
+	my $mod_vers = $mod->{mod_vers};
+	if ($] < 5.10) {
+	  $mod_name .= '::' unless ($mod_name =~ /::/);
+	}
+	push @{$d->{PROVIDE}}, {NAME => $mod_name, VERSION => $mod_vers};
+      }
     }
+  }
+  else {
+    $search->search_error();
+    warn qq{Cannot obtain the modules that '$name' provides};
   }
 
   my $mod_ref;
   foreach my $dp (keys %{$args->{PREREQ_PM}}) {
     next if ($dp eq 'perl' or is_core($dp));
     $dp =~ s{-}{::}g;
+    $d->{REQUIRE}->{$dp} = $args->{PREREQ_PM}->{$dp} || 0;
     push @$mod_ref, $dp;
   }
+  my %deps = map {$_ => 1} @$mod_ref;
   if ($mod_ref and ref($mod_ref) eq 'ARRAY') {
-    my $matches = mod_search($mod_ref);
-    if ($matches and ref($matches) eq 'HASH') {
-      foreach my $dp(keys %$matches) {
-        my $results = $matches->{$dp};
-        next unless (defined $results and defined $results->{mod_name});
-        my $dist = $results->{dist_name};
-        next if (not $dist or $dist =~ m!^perl$! or $dist =~ m!^Test!);
-	next if is_ap_core($dist);
-        $self->{prereq_pm}->{$dist} = 
-          $d->{PREREQ_PM}->{$dist} = 
-            cpan2ppd_version($args->{PREREQ_PM}->{$dp});
+    if ($search->search($mod_ref, mode => 'mod')) {
+      my $matches = $search->{mod_results};
+      if ($matches and ref($matches) eq 'HASH') {
+	foreach my $dp(keys %$matches) {
+	  next unless $deps{$dp};
+	  my $results = $matches->{$dp};
+	  next unless (defined $results and defined $results->{mod_name});
+	  my $dist = $results->{dist_name};
+	  next if (not $dist or $dist =~ m!^perl$!
+		   or $dist =~ m!^Test! or is_ap_core($dist));
+	  $self->{prereq_pm}->{$dist} = 
+	    $d->{DEPENDENCY}->{$dist} = 
+	      cpan2ppd_version($args->{PREREQ_PM}->{$dp} || 0);
+	}
       }
     }
+    else {
+      $search->search_error();
+      warn qq{Cannot find information on prerequisites for '$name'};
+    }
   }
-
   foreach (qw(OS ARCHITECTURE)) {
     delete $d->{$_}->{NAME} unless $self->{$_};
   }
-  
   $self->print_ppd($d, $ppd);
   $self->{ppd} = $ppd;
 }
@@ -597,16 +615,22 @@ sub print_ppd {
   <AUTHOR>$author</AUTHOR>
   <IMPLEMENTATION>
 END
-  
-  foreach (keys %{$d->{PREREQ_PM}}) {
+
+  foreach (keys %{$d->{DEPENDENCY}}) {
     print $fh 
-      qq{    <DEPENDENCY NAME="$_" VERSION="$d->{PREREQ_PM}->{$_}" />\n};
+      qq{    <DEPENDENCY NAME="$_" VERSION="$d->{DEPENDENCY}->{$_}" />\n};
+  }
+  if ($] > 5.008) {
+    foreach (keys %{$d->{REQUIRE}}) {
+      print $fh 
+	qq{    <REQUIRE NAME="$_" VERSION="$d->{REQUIRE}->{$_}" />\n};
+    }
   }
   foreach (qw(OS ARCHITECTURE)) {
     next unless $d->{$_}->{NAME};
     print $fh qq{    <$_ NAME="$d->{$_}->{NAME}" />\n};
   }
-  
+
   if (my $script = $d->{INSTALL}->{SCRIPT}) {
     my $install = 'INSTALL';
     if (my $exec = $d->{INSTALL}->{EXEC}) {
@@ -617,7 +641,7 @@ END
     }
     print $fh qq{    <$install>$script</INSTALL>\n};
   }
-  
+
   print $fh qq{    <CODEBASE HREF="$d->{CODEBASE}->{HREF}" />\n};
 
   my $provide = $d->{PROVIDE};
@@ -815,6 +839,101 @@ sub upload_ppm {
     }
     print qq{Done!\n};
   }
+}
+
+sub fetch_file {
+  my ($self, $dist, %args) = @_;
+  my $no_case = $args{no_case};
+  my $to;
+  if (-f $dist) {
+    $to = basename($dist, $ext);
+    unless ($dist eq $to) {
+      copy($dist, $to) or die "Cannot cp $dist to $to: $!";
+    }
+    return $to;
+  }
+  if ($dist =~ m!$protocol!) {
+    ($to = $dist) =~ s!.*/(.*)!$1!;
+    print "Fetching $dist ....\n";
+    my $rc = is_success(getstore($dist, $to));
+    unless ($rc) {
+      $self->{fetch_error} = qq{Fetch of $dist failed.};
+      return;
+    }
+    return $to;
+  }
+  my $search = $self->{search};
+  my $results;
+  unless ($dist =~ /$ext$/) {
+    my $mod = $dist;
+    $mod =~ s!-!::!g;
+    if ($search->search($mod, mode => 'mod')) {
+      $results = $search->{mod_results}->{$mod};
+    }
+    unless ($results) {
+      $mod =~ s!::!-!g;
+      if ($search->search($mod, mode => 'dist')) {
+	$results = $search->{dist_results}->{$mod};
+      }
+    }
+    unless ($results->{cpanid} and $results->{dist_file}) {
+      $self->{fetch_error} = qq{Cannot get distribution name of '$mod'};
+      return;
+    }
+    $dist = cpan_file($results->{cpanid}, $results->{dist_file});
+  }
+  my $id = dirname($dist);
+  $to = basename($dist, $ext);
+  my $src = HAS_CPAN ? 
+    File::Spec->catdir($src_dir, 'authors/id', $id) : 
+        $src_dir;
+  my $CS = 'CHECKSUMS';
+  my $get_cs = 0;
+  for my $file( ($to, $CS)) {
+    my $local = File::Spec->catfile($src, $file);
+    if (-e $local and $src_dir ne $build_dir and not $get_cs) {
+      copy($local, '.') or do {
+        $self->{fetch_error} = "Cannot copy $local: $!";
+        return;
+      };
+      next;
+    }
+    else {
+      my $from;
+      $get_cs = 1;
+      foreach my $url(@url_list) {
+        $url =~ s!/$!!;
+        $from = $url . '/authors/id/' . $id . '/' . $file;
+        print "Fetching $from ...\n";
+        last if is_success(getstore($from, $file));
+      }
+      unless (-e $file) {
+        $self->{fetch_error} = "Fetch of $file from $from failed";
+        return;
+      }
+      if ($src_dir ne $build_dir) {
+        unless (-d $src) {
+          mkpath($src) or do {
+            $self->{fetch_error} = "Cannot mkdir $src: $!";
+            return;
+          };
+        }
+        copy($file, $src) or warn "Cannot copy $to to $src: $!";
+      }
+    }
+  }
+  return $to unless $to =~ /$ext$/;
+  my $cksum;
+  unless ($cksum = load_cs($CS)) {
+    $self->{fetch_error} = qq{Checksums check disabled - cannot load $CS file.};
+    return;
+  }
+  unless (verifyMD5($cksum, $to)) {
+    $self->{fetch_error} =  qq{Checksums check for "$to" failed.};
+    return;
+  }
+  unlink $CS or warn qq{Cannot unlink "$CS": $!\n};
+  return $to;
 }
 
 1;
@@ -1115,6 +1234,7 @@ This is the associated password to use for I<user>
 =item no_upload =E<gt> 1
 
 This option instructs C<upload> to be ignored (used by PPM::Make::Bundle)
+
 =back
 
 =head2 STEPS
@@ -1139,8 +1259,32 @@ program must be present.
 If I<dist> is specified, the corresponding file is
 fetched (by I<LWP::Simple>, if a I<URL> is specified).
 If I<dist> appears to be a module name, the associated
-distribution is determined by I<CPAN.pm>. The distribution
-is then unpacked.
+distribution is determined by I<CPAN.pm>. This is done
+through the C<fetch_file> method, which
+fetches a file, and if successful, returns the stored filename.
+If the file is specified beginning with I<http://> or I<ftp://>:
+
+  my $fetch = 'http://my.server/my_file.tar.gz';
+  my $filename = $obj->fetch_file($fetch);
+
+will grab this file directly. Otherwise, if the file is
+specified with an absolute path name, has
+an extension I<\.(tar\.gz|tgz|tar\.Z|zip)>, and if the file
+exists locally, it will use that; otherwise, it will assume
+this is a CPAN distribution and grab it from a CPAN mirror:
+
+  my $dist = 'A/AB/ABC/file.tar.gz';
+  my $filename = $obj->fetch_file($dist);
+
+which assumes the file lives under I<$CPAN/authors/id/>. If
+neither of the above are satisfied, it will assume this
+is, first of all, a module name, and if not found, a distribution
+name, and if found, will fetch the corresponding CPAN distribution.
+
+  my $mod = 'Net::FTP';
+  my $filename = $obj->fetch_file($mod);
+
+Assuming this succeeds, the distribution is then unpacked.
 
 =item build the distribution
 
@@ -1225,12 +1369,48 @@ available and already configured, either site-wide or
 through a user's F<$HOME/.cpan/CPAN/MyConfig.pm>.
 
 Although the examples given above had a Win32 flavour,
-like I<PPM>, no assumptions on the operating system are 
-made in the module. 
+like I<PPM>, no assumptions on the operating system are
+made in the module.
+
+=head1 SUPPORT
+
+You can find documentation for this module with the perldoc command.
+
+    perldoc PPM::Make
+
+You can also look for information at:
+
+=over 4
+
+=item * AnnoCPAN: Annotated CPAN documentation
+
+L<http://annocpan.org/dist/PPM-Make>
+
+=item * CPAN::Forum: Discussion forum
+
+L<http:///www.cpanforum.com/dist/PPM-Make>
+
+=item * CPAN Ratings
+
+L<http://cpanratings.perl.org/d/PPM-Make>
+
+=item * RT: CPAN's request tracker
+
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=PPM-Make>
+
+=item * Search CPAN
+
+L<http://search.cpan.org/dist/PPM-Make>
+
+=item * UWinnipeg CPAN search
+
+L<http://cpan.uwinnipeg.ca/dist/PPM-Make>
+
+=back
 
 =head1 COPYRIGHT
 
-This program is copyright, 2003, 2006 
+This program is copyright, 2003, 2006, 2008
 by Randy Kobes E<gt>r.kobes@uwinnipeg.caE<lt>.
 It is distributed under the same terms as Perl itself.
 

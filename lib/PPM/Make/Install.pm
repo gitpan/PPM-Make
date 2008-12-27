@@ -9,8 +9,10 @@ use PPM::Make::Config qw(:all);
 use PPM::Make::Meta;
 use Config;
 use Cwd;
+require File::Spec;
 
-our $VERSION = '0.95';
+our $VERSION = '0.96';
+my $fetch_error;
 
 sub new {
   my ($class, %opts) = @_;
@@ -71,11 +73,11 @@ sub make_ppm {
   my $self = shift;
   my $dist = $self->{opts}->{dist};
   if ($dist) {
-    my $build_dir = $PPM::Make::Util::build_dir;
+    my $build_dir = File::Spec->tmpdir;
     chdir $build_dir or die "Cannot chdir to $build_dir: $!";
     print "Working directory: $build_dir\n"; 
-    unless ($dist = fetch_file($dist)) {
-      die $ERROR;
+    unless ($dist = $self->fetch_file($dist)) {
+      die $self->{fetch_error};
     }
 #      if ($dist =~ m!$protocol! 
 #          or $dist =~ m!^\w/\w\w/! or $dist !~ m!$ext!);

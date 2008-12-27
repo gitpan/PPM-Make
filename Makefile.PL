@@ -12,13 +12,13 @@ my %prereqs = ('Pod::Find' => 0.23,
 	       'LWP' => 0,
 	       'YAML' => 0,
 	       'XML::Parser' => 2,
-               'Getopt::Long' => 2.33,
+           'Getopt::Long' => 2.33,
 	       'Config::IniFiles' => 0,
-               'Pod::Usage' => 1,
-               'CPAN::DistnameInfo' => 0,
-               'SOAP::Lite' => 0,
+           'Pod::Usage' => 1,
+           'CPAN::DistnameInfo' => 0,
 	       'File::HomeDir' => 0.52,
-               'HTML::Entities' => 0,
+           'HTML::Entities' => 0,
+           'version'  => 0,
 	       );
 
 my $home = $ENV{HOME};
@@ -96,7 +96,7 @@ DEATH
   }
 }
 else {
-  my $atv = $Archive::Tar::VERSION + 0;
+  my $atv = mod_version('Archive::Tar');
   if ($atv < 1.08 and WIN32) {
     print <<'AT';
 
@@ -142,7 +142,7 @@ WARN
   }
 }
 else {
-  my $zipv = $Archive::Zip::VERSION + 0;
+  my $zipv = mod_version('Archive::Zip');
   if ($zipv < 1.02) {
     print <<'ZIP';
 
@@ -215,7 +215,23 @@ The package is still usable, but will not be able to handle
 distributions requiring Module::Build.
 
 WARN
-    
+
+  }
+}
+
+eval{require SOAP::Lite; };
+if ($@) {
+  print <<'WARN';
+
+I could not find SOAP::Lite, which is an optional module
+which would be used, if present, to fetch some meta information
+on various packages. I can add this
+to the list of prerequisites to install, if you like.
+
+WARN
+  my $ans = prompt('Add SOAP::Lite?', 'yes');
+  if ($ans =~ /^y/i) {
+    $prereqs{'SOAP::Lite'} = 0;
   }
 }
 
@@ -239,15 +255,14 @@ The package will still be able to function in creating
 ppm files, but cannot install them.
 
 WARN
-    
   }
 }
 
 my @exe_files = map{"bin/$_"} qw(make_ppm ppm_install rep_summary
-				 make_ppm_bundle);
+                                 make_ppm_bundle make_ppm_install);
 #push @exe_files, 'tk-ppm' if WIN32;
 
-my $eu_version = $ExtUtils::MakeMaker::VERSION;
+my $eu_version = mod_version('ExtUtils::MakeMaker');
 my %opts;
 if ($eu_version >= 5.43) {
   $opts{ABSTRACT_FROM} = q{lib/PPM/Make.pm};
@@ -277,6 +292,17 @@ sub path_ext {
     #Win9X: doesn't have PATHEXT
     push @path_ext, qw(com exe bat);
   }
+}
+
+sub mod_version {
+  my $mod = shift;
+  eval "require $mod";
+  return if $@;
+  my $mv = eval "$mod->VERSION";
+  return 0 if $@;
+  $mv =~ s/_.*$//x;
+  $mv += 0;
+  return $mv;
 }
 
 sub which {
