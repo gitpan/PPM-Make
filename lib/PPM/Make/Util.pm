@@ -33,7 +33,7 @@ This module contains a number of utility functions used by PPM::Make.
 
 =cut
 
-our $VERSION = '0.96';
+our $VERSION = '0.97';
 
 my %encode = ('&' => '&amp;', '>' => '&gt;',
 	      '<' => '&lt;', '"' => '&quot;');
@@ -659,6 +659,7 @@ C<A/AB/ABCDEFG/file.tar.gz>.
 
 sub cpan_file {
   my ($cpanid, $file) = @_;
+  return $file if $file =~ m!/!;
   (my $cpan_loc = $cpanid) =~ s{^(\w)(\w)(.*)}{$1/$1$2/$1$2$3};
   return qq{$cpan_loc/$file};
 }

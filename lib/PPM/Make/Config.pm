@@ -9,7 +9,7 @@ use Config::IniFiles;
 use LWP::Simple qw(getstore is_success);
 
 our ($ERROR);
-our $VERSION = '0.96';
+our $VERSION = '0.97';
 
 =head1 NAME
 
@@ -139,7 +139,7 @@ sub check_opts {
     map {$_ => 1} qw(force ignore binary zip_archive remove program cpan
                      dist script exec os arch arch_sub add no_as vs upload
                      no_case no_cfg vsr vsp zipdist no_ppm4 no_html
-		     reps no_upload skip cpan_meta);
+		     reps no_upload skip cpan_meta no_remote_lookup);
   foreach (keys %opts) {
     next if $legal{$_};
     warn "Unknown option '$_'\n";
