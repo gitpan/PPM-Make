@@ -1,0 +1,68 @@
+{
+   "abstract" : "Make a ppm package from a CPAN distribution",
+   "author" : [
+      "Randy Kobes <r.kobes@uwinnipeg.ca>"
+   ],
+   "dynamic_config" : 1,
+   "generated_by" : "ExtUtils::MakeMaker version 6.62, CPAN::Meta::Converter version 2.112621",
+   "license" : [
+      "perl_5"
+   ],
+   "meta-spec" : {
+      "url" : "http://search.cpan.org/perldoc?CPAN::Meta::Spec",
+      "version" : "2"
+   },
+   "name" : "PPM-Make",
+   "no_index" : {
+      "directory" : [
+         "t",
+         "inc"
+      ]
+   },
+   "prereqs" : {
+      "build" : {
+         "requires" : {
+            "ExtUtils::MakeMaker" : 0
+         }
+      },
+      "configure" : {
+         "requires" : {
+            "ExtUtils::MakeMaker" : 0
+         }
+      },
+      "runtime" : {
+         "requires" : {
+            "CPAN::DistnameInfo" : 0,
+            "Config::IniFiles" : 0,
+            "File::HomeDir" : "0.52",
+            "File::Spec" : 0,
+            "Getopt::Long" : "2.33",
+            "HTML::Entities" : 0,
+            "LWP" : 0,
+            "Pod::Find" : "0.23",
+            "Pod::Usage" : "1",
+            "XML::Parser" : "2",
+            "YAML" : 0,
+            "version" : 0
+         }
+      }
+   },
+   "release_status" : "stable",
+   "resources" : {
+      "bugtracker" : {
+         "web" : "http://rt.cpan.org/NoAuth/Bugs.html?Dist=PPM-Make"
+      },
+      "homepage" : "http://github.com/charsbar/ppm-make",
+      "license" : [
+         "http://dev.perl.org/licenses/"
+      ],
+      "x_AnnoCPAN" : "http://annocpan.org/dist/PPM-Make",
+      "x_CPANForum" : "http://www.cpanforum.com/dist/PPM-Make",
+      "x_CPANTS" : "http://cpants.perl.org/dist/PPM-Make",
+      "x_Rating" : "http://cpanratings.perl.org/d/PPM-Make",
+      "x_SearchCPAN" : "http://search.cpan.org/~ISHIGAKI/PPM-Make/",
+      "x_Testers" : "http://cpantesters.perl.org/show/PPM-Make.html",
+      "x_UWinnipeg" : "http://cpan.uwinnipeg.ca/dist/PPM-Make"
+   },
+   "version" : "0.99"
+}

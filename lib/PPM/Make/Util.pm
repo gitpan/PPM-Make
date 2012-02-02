@@ -33,10 +33,10 @@ This module contains a number of utility functions used by PPM::Make.
 
 =cut
 
-our $VERSION = '0.97';
+our $VERSION = '0.99';
 
 my %encode = ('&' => '&amp;', '>' => '&gt;',
-	      '<' => '&lt;', '"' => '&quot;');
+              '<' => '&lt;', '"' => '&quot;');
 
 use base qw(Exporter);
 
@@ -48,44 +48,44 @@ $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)};
 
 my @exports = qw(load_cs verifyMD5 xml_encode parse_version $ERROR
                  is_core is_ap_core url_list
-		 trim parse_ppd parse_abstract
+                 trim parse_ppd parse_abstract
                  ppd2cpan_version cpan2ppd_version tempfile
                  file_to_dist cpan_file fix_path
-		 $src_dir $build_dir @url_list);
+                 $src_dir $build_dir @url_list);
 
 %EXPORT_TAGS = (all => [@exports]);
 @EXPORT_OK = (@exports);
 
 my %ap_core = map {$_ => 1} qw(
-			       Archive-Tar
-			       Archive-Zip
-			       Compress-Zlib
-			       Data-Dump
-			       Digest-HMAC
-			       Digest-MD2
-			       Digest-MD4
-			       Digest-SHA1
-			       File-CounterFile
-			       Font-AFM
-			       HTML-Parser
-			       HTML-Tagset
-			       HTML-Tree
-			       IO-String
-			       IO-Zlib
-			       libwin32
-			       libwww-perl
-			       MD5
-			       MIME-Base64-Scripts
-			       SOAP-Lite
-			       Term-ReadLine-Perl
-			       TermReadKey
-			       Text-Autoformat
-			       Text-Reform
-			       Tk
-			       Unicode-String
-			       URI
-			       XML-Parser
-			       XML-Simple  );
+                               Archive-Tar
+                               Archive-Zip
+                               Compress-Zlib
+                               Data-Dump
+                               Digest-HMAC
+                               Digest-MD2
+                               Digest-MD4
+                               Digest-SHA1
+                               File-CounterFile
+                               Font-AFM
+                               HTML-Parser
+                               HTML-Tagset
+                               HTML-Tree
+                               IO-String
+                               IO-Zlib
+                               libwin32
+                               libwww-perl
+                               MD5
+                               MIME-Base64-Scripts
+                               SOAP-Lite
+                               Term-ReadLine-Perl
+                               TermReadKey
+                               Text-Autoformat
+                               Text-Reform
+                               Tk
+                               Unicode-String
+                               URI
+                               XML-Parser
+                               XML-Simple  );
 
 if (WIN32 and ACTIVEPERL and eval { Win32::BuildNumber() > 818 }) {
   $ap_core{'DBI'}++; $ap_core{'DBD-SQLite'}++;
@@ -93,10 +93,10 @@ if (WIN32 and ACTIVEPERL and eval { Win32::BuildNumber() > 818 }) {
 src_and_build();
 
 my %Escape = ('&' => 'amp',
-	      '>' => 'gt',
-	      '<' => 'lt',
-	      '"' => 'quot'
-	     );
+              '>' => 'gt',
+              '<' => 'lt',
+              '"' => 'quot'
+             );
 
 my %dists;
 my $info_soap;
@@ -131,7 +131,7 @@ Loads a CHECKSUMS file into $cksum
 
 sub load_cs {
   my $cs = shift;
-  open(my $fh, $cs);
+  open(my $fh, '<', $cs);
   unless ($fh) {
     $ERROR = qq{Could not open "$cs": $!};
     return;
@@ -161,7 +161,7 @@ Verify a CHECKSUM for a $file
 sub verifyMD5 {
   my ($cksum, $file) = @_;
   my ($is, $should);
-  open (my $fh, $file);
+  open (my $fh, '<', $file);
   unless ($fh) {
     $ERROR = qq{Cannot open "$file": $!};
     return;
@@ -376,13 +376,13 @@ sub parse_ppd {
     }
   }
   my $p = XML::Parser->new(Style => 'Subs',
-			   Handlers => {Char => \&ppd_char,
-					Start => \&ppd_start,
-					End => \&ppd_end,
-					Init => \&ppd_init,
-					Final => \&ppd_final,
-				       },
-			  );
+                           Handlers => {Char => \&ppd_char,
+                                        Start => \&ppd_start,
+                                        End => \&ppd_end,
+                                        Init => \&ppd_init,
+                                        Final => \&ppd_final,
+                                       },
+                          );
   my $d = $is_a_file ? $p->parsefile($file) : $p->parse($file);
   my $implem = $d->{IMPLEMENTATION};
   my $size = scalar @$implem;
@@ -402,8 +402,8 @@ sub parse_ppd {
     my $i;
     for ($i=0; $i<$size; $i++) {
       if ($implem->[$i]->{ARCHITECTURE}->{NAME} eq $arch) {
-	$flag++;
-	last;
+        $flag++;
+        last;
       }
     }
     return unless $flag;
@@ -424,21 +424,21 @@ sub ppd_init {
   my $self = shift;
   $i = 0;
   $self->{_mydata} = {
-		      SOFTPKG => {NAME => '', VERSION => ''},
-		      TITLE => '',
-		      AUTHOR => '',
-		      ABSTRACT => '',
-		      PROVIDE => [],
-		      IMPLEMENTATION => [],
-		      OS => {NAME => ''},
-		      ARCHITECTURE => {NAME => ''},
-		      CODEBASE => {HREF => ''},
-		      DEPENDENCY => [],
-		      REQUIRE => [],
-		      INSTALL => {EXEC => '', SCRIPT => '', HREF => ''},
-		      wanted => {TITLE => 1, ABSTRACT => 1, AUTHOR => 1},
-		      _current => '',
-		     };
+                      SOFTPKG => {NAME => '', VERSION => ''},
+                      TITLE => '',
+                      AUTHOR => '',
+                      ABSTRACT => '',
+                      PROVIDE => [],
+                      IMPLEMENTATION => [],
+                      OS => {NAME => ''},
+                      ARCHITECTURE => {NAME => ''},
+                      CODEBASE => {HREF => ''},
+                      DEPENDENCY => [],
+                      REQUIRE => [],
+                      INSTALL => {EXEC => '', SCRIPT => '', HREF => ''},
+                      wanted => {TITLE => 1, ABSTRACT => 1, AUTHOR => 1},
+                      _current => '',
+                     };
 }
 
 sub ppd_start {
@@ -455,45 +455,45 @@ sub ppd_start {
       my $name = $attrs{NAME};
       my $version = $attrs{VERSION};
       if ($version) {
-	push @{$internal->{IMPLEMENTATION}->[$i]->{PROVIDE}},
-	  {NAME => $name, VERSION => $version};
+        push @{$internal->{IMPLEMENTATION}->[$i]->{PROVIDE}},
+          {NAME => $name, VERSION => $version};
       }
       else {
-	push @{$internal->{IMPLEMENTATION}->[$i]->{PROVIDE}},
-	  {NAME => $name};	
+        push @{$internal->{IMPLEMENTATION}->[$i]->{PROVIDE}},
+          {NAME => $name};        
       }
       last SWITCH;
     };
     ($tag eq 'CODEBASE') and do {
       $internal->{IMPLEMENTATION}->[$i]->{CODEBASE}->{HREF} =
-	$attrs{HREF};
+        $attrs{HREF};
       last SWITCH;
     };
     ($tag eq 'OS') and do {
       $internal->{IMPLEMENTATION}->[$i]->{OS}->{NAME} =
-	$attrs{NAME};
+        $attrs{NAME};
       last SWITCH;
     };
     ($tag eq 'ARCHITECTURE') and do {
       $internal->{IMPLEMENTATION}->[$i]->{ARCHITECTURE}->{NAME} =
-	$attrs{NAME};
+        $attrs{NAME};
       last SWITCH;
     };
     ($tag eq 'INSTALL') and do {
       $internal->{IMPLEMENTATION}->[$i]->{INSTALL}->{EXEC} =
-	$attrs{EXEC};
+        $attrs{EXEC};
       $internal->{IMPLEMENTATION}->[$i]->{INSTALL}->{HREF} =
-	$attrs{HREF};
+        $attrs{HREF};
       last SWITCH;
     };
     ($tag eq 'DEPENDENCY') and do {
       push @{$internal->{IMPLEMENTATION}->[$i]->{DEPENDENCY}},
-	{NAME => $attrs{NAME}, VERSION => $attrs{VERSION}};
+        {NAME => $attrs{NAME}, VERSION => $attrs{VERSION}};
       last SWITCH;
     };
     ($tag eq 'REQUIRE') and do {
       push @{$internal->{IMPLEMENTATION}->[$i]->{REQUIRE}},
-	{NAME => $attrs{NAME}, VERSION => $attrs{VERSION}};
+        {NAME => $attrs{NAME}, VERSION => $attrs{VERSION}};
       last SWITCH;
     };
   }
@@ -583,7 +583,7 @@ sub parse_version {
   my $version;
   local $/ = "\n";
   my $fh;
-  unless (open($fh, $parsefile)) {
+  unless (open($fh, '<', $parsefile)) {
     $ERROR = "Could not open '$parsefile': $!";
     return;
   }
@@ -630,7 +630,7 @@ sub parse_abstract {
   (my $trans = $package) =~ s!-!::!g;
   my $result;
   my $inpod = 0;
-  open(my $fh, $file) or die "Couldn't open $file: $!";
+  open(my $fh, '<', $file) or die "Couldn't open $file: $!";
   while (<$fh>) {
     $inpod = /^=(?!cut)/ ? 1 : /^=cut/ ? 0 : $inpod;
     next if !$inpod;

@@ -11,7 +11,7 @@ use Config;
 use Cwd;
 require File::Spec;
 
-our $VERSION = '0.97';
+our $VERSION = '0.99';
 my $fetch_error;
 
 sub new {
@@ -28,19 +28,19 @@ sub new {
   }
   my $has = what_have_you($opts{program}, $arch, $os);
   my $self = {
-	      opts => \%opts || {},
-	      cwd => '',
-	      has => $has,
-	      args => {},
-	      ppd => '',
-	      archive => '',
+              opts => \%opts || {},
+              cwd => '',
+              has => $has,
+              args => {},
+              ppd => '',
+              archive => '',
           prereq_pm => {},
-	      file => '',
-	      version => '',
+              file => '',
+              version => '',
           use_mb => '',
-	      ARCHITECTURE => $arch,
-	      OS => $os,
-	     };
+              ARCHITECTURE => $arch,
+              OS => $os,
+             };
   bless $self, $class;
 }
 

@@ -4,12 +4,12 @@ use warnings;
 use PPM::Make;
 use PPM::Make::Config qw(HAS_PPM);
 
-our $VERSION = '0.97';
+our $VERSION = '0.99';
 
 sub new {
   my ($class, %opts) = @_;
   my $self = {cpan_meta => $opts{cpan_meta},
-	      opts => \%opts};
+              opts => \%opts};
   bless $self, $class;
 }
 
