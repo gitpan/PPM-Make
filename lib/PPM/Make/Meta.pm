@@ -8,7 +8,7 @@ require File::Spec;
 use Safe;
 use YAML qw(LoadFile);
 
-our $VERSION = '0.99';
+our $VERSION = '0.9901';
 
 sub new {
   my ($class, %opts) = @_;

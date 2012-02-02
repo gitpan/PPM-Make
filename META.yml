@@ -41,4 +41,4 @@ resources:
   x_SearchCPAN: http://search.cpan.org/~ISHIGAKI/PPM-Make/
   x_Testers: http://cpantesters.perl.org/show/PPM-Make.html
   x_UWinnipeg: http://cpan.uwinnipeg.ca/dist/PPM-Make
-version: 0.99
+version: 0.9901
