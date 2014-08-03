@@ -1,44 +1,47 @@
 ---
-abstract: Make a ppm package from a CPAN distribution
+abstract: 'Make a ppm package from a CPAN distribution'
 author:
   - 'Randy Kobes <r.kobes@uwinnipeg.ca>'
 build_requires:
-  ExtUtils::MakeMaker: 0
+  ExtUtils::MakeMaker: '0'
 configure_requires:
-  ExtUtils::MakeMaker: 0
-dynamic_config: 1
-generated_by: 'ExtUtils::MakeMaker version 6.62, CPAN::Meta::Converter version 2.112621'
+  ExtUtils::MakeMaker::CPANfile: '0.06'
+dynamic_config: 0
+generated_by: 'ExtUtils::MakeMaker version 6.98, CPAN::Meta::Converter version 2.141520'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
-  version: 1.4
+  version: '1.4'
 name: PPM-Make
 no_index:
   directory:
     - t
     - inc
 requires:
-  CPAN::DistnameInfo: 0
-  Config::IniFiles: 0
-  File::HomeDir: 0.52
-  File::Spec: 0
-  Getopt::Long: 2.33
-  HTML::Entities: 0
-  LWP: 0
-  Pod::Find: 0.23
-  Pod::Usage: 1
-  XML::Parser: 2
-  YAML: 0
-  version: 0
+  Archive::Tar: '1.08'
+  Archive::Zip: '1.02'
+  CPAN::DistnameInfo: '0'
+  CPAN::Meta::YAML: '0'
+  Compress::Zlib: '1'
+  Config::IniFiles: '0'
+  File::HomeDir: '0.52'
+  File::Spec: '0'
+  Getopt::Long: '2.33'
+  HTTP::Tiny: '0'
+  Pod::Find: '0.23'
+  Pod::Usage: '1'
+  XML::Parser: '2'
+  XML::Writer: '0'
+  version: '0'
 resources:
+  AnnoCPAN: http://annocpan.org/dist/PPM-Make
+  CPANForum: http://www.cpanforum.com/dist/PPM-Make
+  CPANTS: http://cpants.perl.org/dist/PPM-Make
+  Rating: http://cpanratings.perl.org/d/PPM-Make
+  SearchCPAN: http://search.cpan.org/~ISHIGAKI/PPM-Make/
+  Testers: http://cpantesters.perl.org/show/PPM-Make.html
   bugtracker: http://rt.cpan.org/NoAuth/Bugs.html?Dist=PPM-Make
-  homepage: http://github.com/charsbar/ppm-make
+  homepage: https://github.com/charsbar/ppm-make
   license: http://dev.perl.org/licenses/
-  x_AnnoCPAN: http://annocpan.org/dist/PPM-Make
-  x_CPANForum: http://www.cpanforum.com/dist/PPM-Make
-  x_CPANTS: http://cpants.perl.org/dist/PPM-Make
-  x_Rating: http://cpanratings.perl.org/d/PPM-Make
-  x_SearchCPAN: http://search.cpan.org/~ISHIGAKI/PPM-Make/
-  x_Testers: http://cpantesters.perl.org/show/PPM-Make.html
-  x_UWinnipeg: http://cpan.uwinnipeg.ca/dist/PPM-Make
-version: 0.9901
+  repository: https://github.com/charsbar/ppm-make
+version: '0.9902'

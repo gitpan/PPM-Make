@@ -1,21 +1,16 @@
 package PPM::Make::Util;
 use strict;
 use warnings;
-use Exporter;
+use base qw(Exporter);
 use File::Basename;
 use Safe;
-use File::Copy;
 use XML::Parser;
 use Digest::MD5;
-require File::Spec;
-use File::Path;
 use Config;
-use LWP::Simple qw(getstore is_success);
 use CPAN::DistnameInfo;
-use File::HomeDir;
-use HTML::Entities qw(encode_entities encode_entities_numeric);
 use File::Spec;
 use PPM::Make::Config qw(WIN32 HAS_CPAN HAS_PPM HAS_MB ACTIVEPERL);
+use HTTP::Tiny;
 
 =head1 NAME
 
@@ -33,12 +28,7 @@ This module contains a number of utility functions used by PPM::Make.
 
 =cut
 
-our $VERSION = '0.9901';
-
-my %encode = ('&' => '&amp;', '>' => '&gt;',
-              '<' => '&lt;', '"' => '&quot;');
-
-use base qw(Exporter);
+our $VERSION = '0.9902';
 
 our (@EXPORT_OK, %EXPORT_TAGS, $protocol, $ext, $src_dir, $build_dir,
      @url_list, $ERROR);
@@ -46,11 +36,12 @@ $protocol = qr{^(http|ftp)://};
 $ext = qr{\.(tar\.gz|tgz|tar\.Z|zip)};
 @url_list = url_list();
 
-my @exports = qw(load_cs verifyMD5 xml_encode parse_version $ERROR
+my @exports = qw(load_cs verifyMD5 parse_version $ERROR
                  is_core is_ap_core url_list
                  trim parse_ppd parse_abstract
                  ppd2cpan_version cpan2ppd_version tempfile
                  file_to_dist cpan_file fix_path
+                 mirror
                  $src_dir $build_dir @url_list);
 
 %EXPORT_TAGS = (all => [@exports]);
@@ -92,16 +83,7 @@ if (WIN32 and ACTIVEPERL and eval { Win32::BuildNumber() > 818 }) {
 }
 src_and_build();
 
-my %Escape = ('&' => 'amp',
-              '>' => 'gt',
-              '<' => 'lt',
-              '"' => 'quot'
-             );
-
 my %dists;
-my $info_soap;
-my $info_uri = 'http://theoryx5.uwinnipeg.ca/Apache/InfoServer';
-my $info_proxy = 'http://theoryx5.uwinnipeg.ca/cgi-bin/ppminfo.cgi';
 
 =item fix_path
 
@@ -183,21 +165,6 @@ sub verifyMD5 {
     $ERROR = qq{Checksum data for "$file" not present.};
     return;
   }
-}
-
-=item xml_encode
-
-Escapes E<amp>, E<gt>, E<lt>, and E<quot>, as well as high ASCII characters.
-
-  my $escaped = xml_encode('Five is > four');
-
-=cut
-
-sub xml_encode {
-    my $s = shift;
-    return unless $s;
-    $s =~ s/(&(?!(amp|lt|gt|quot);)|>|<|\")/$encode{$1}/g;
-    return encode_entities_numeric($s, "\177-\377");
 }
 
 =item is_core
@@ -504,7 +471,7 @@ sub ppd_char {
   my $internal = $self->{_mydata};
   my $tag = $internal->{_current};
   if ($tag and $internal->{wanted}->{$tag}) {
-    $internal->{$tag} .= xml_encode($string);
+    $internal->{$tag} .= $string;
   }
   elsif ($tag and $tag eq 'INSTALL') {
     $internal->{IMPLEMENTATION}->[$i]->{INSTALL}->{SCRIPT} .= $string;
@@ -541,12 +508,6 @@ sub src_and_build {
     HAS_CPAN and do {
       $src_dir = $CPAN::Config->{keep_source_where};
       $build_dir = $CPAN::Config->{build_dir};
-      last SWITCH if ($src_dir and $build_dir);
-    };
-    HAS_PPM and do {
-      my $d = parse_ppm();
-      $src_dir = $d->{OPTIONS}->{BUILDDIR};
-      $build_dir = $src_dir;
       last SWITCH if ($src_dir and $build_dir);
     };
     $src_dir = File::Spec->tmpdir() || '.';
@@ -683,36 +644,19 @@ sub url_list {
   return @urls;
 }
 
-# from Module::Build
-sub prompt {
-  my ($mess, $def) = @_;
-  die "prompt() called without a prompt message" unless @_;
-  
-# Pipe?
-  my $INTERACTIVE = -t STDIN && (-t STDOUT || !(-f STDOUT || -c STDOUT));
-  
-  ($def, my $dispdef) = defined $def ? ($def, "[$def] ") : ('', ' ');
+=item mirror
 
-  {
-    local $|=1;
-    print "$mess $dispdef";
-  }
-  my $ans;
-  if ($INTERACTIVE) {
-    $ans = <STDIN>;
-    if ( defined $ans ) {
-      chomp $ans;
-    } else { # user hit ctrl-D
-      print "\n";
-    }
-  }
-  
-  unless (defined($ans) and length($ans)) {
-    print "$def\n";
-    $ans = $def;
-  }
-  
-  return $ans;
+Gets a file from a remote source and store it to a local file.
+
+  my $success = getstore($url, $file);
+
+=cut
+
+sub mirror {
+  my ($url, $file) = @_;
+  my $ua = HTTP::Tiny->new(agent => "PPM-Make/$VERSION");
+  my $res = $ua->mirror($url, $file);
+  $res->{success} ? 1 : 0;
 }
 
 1;

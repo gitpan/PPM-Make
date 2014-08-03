@@ -6,14 +6,12 @@ use Cwd;
 use File::Spec::Functions qw(:ALL);
 use File::Copy;
 use File::Path;
-use Config qw(myconfig %Config);
 use PPM::Make;
 use PPM::Make::Util qw(:all);
 use PPM::Make::Config qw(:all);
 use PPM::Make::Search;
-use LWP::Simple;
 
-our $VERSION = '0.9901';
+our $VERSION = '0.9902';
 
 my @cpan_mirrors = url_list();
 my $protocol = qr{^(http|ftp)://};
@@ -41,7 +39,9 @@ sub new {
     }
   }
   my $opts = %cfg ? merge_opts(\%cfg, \%opts) : \%opts;
-  my $search = PPM::Make::Search->new();
+  my $search = PPM::Make::Search->new(
+    no_remote_lookup => $opts->{no_remote_lookup},
+  );
 
   my $cwd = cwd;
   my $build_dir = catdir(tmpdir, "ppm_make-$$");
@@ -49,7 +49,7 @@ sub new {
   my $self = {cwd => $cwd, opts => $opts, files => {}, name => '',
               build_dir => $build_dir, has => $has, zipdist => $bundle_name,
               clean => $clean, arch => $arch, os => $os,
-              search => $search, no_remote_lookup => $opts->{no_remote_lookup},
+              search => $search,
               };
   bless $self, $class;
 }
@@ -115,9 +115,8 @@ sub get_info {
   my ($self, $dist) = @_;
   return if (-f $dist or $dist =~ /^$protocol/ or $dist =~ /$ext$/);
   my $search = $self->{search};
-  my $no_remote_lookup = $self->{no_remote_lookup};
   $dist =~ s{::}{-}g;
-  unless ($no_remote_lookup) {
+  {
     if ($search->search($dist, mode => 'dist')) {
       my $results = $search->{dist_results}->{$dist};
       my $cpan_file = cpan_file($results->{cpanid}, $results->{dist_file});
@@ -125,9 +124,7 @@ sub get_info {
       return $info;
     }
     else {
-      $search->search_error();
-      warn qq{Cannot obtain information on '$dist'};
-      return;
+      $search->search_error(qq{Cannot obtain information on '$dist'});
     }
   }
   return;
@@ -155,8 +152,7 @@ sub from_cpan {
     push @prereqs, $mod unless ($mod eq 'perl' or is_core($mod));
   }
   my $search = $self->{search};
-  my $no_remote_lookup = $self->{no_remote_lookup};
-  unless ($no_remote_lookup) {
+  {
     if (scalar @prereqs > 0) {
       my $matches = $search->search(\@prereqs, mode => 'mod');
       if ($matches and (ref($matches) eq 'HASH')) {
@@ -211,7 +207,7 @@ sub from_repository {
       $item .= '/' unless $item =~ m{/$};
       my $ppd_remote = $item . $ppd_local;
       if (head($ppd_remote)) {
-        if (is_success(getstore($ppd_remote, $ppd_local))) {
+        if (mirror($ppd_remote, $ppd_local)) {
           $info = parse_ppd(catfile($cwd, $ppd_local), $arch);
           next unless ($info and (ref($info) eq 'HASH'));
           my $info_arch = $info->{ARCHITECTURE}->{NAME};
@@ -231,7 +227,7 @@ sub from_repository {
   (my $ar_local = $codebase) =~ s{.*?/([^/]+)$}{$1};
   if ($codebase =~ /^$protocol/) {
     my $ar_remote = $codebase;
-    return unless is_success(getstore($ar_remote, $ar_local));
+    return unless mirror($ar_remote, $ar_local);
   }
   elsif ($url !~ /^$protocol/) {
     my $ar_remote = catfile($url, $codebase);
@@ -244,7 +240,7 @@ sub from_repository {
   }
   else {
     my $ar_remote = $url . $codebase;
-    return unless is_success(getstore($ar_remote, $ar_local));
+    return unless mirror($ar_remote, $ar_local);
   }
   unless (-f $ar_local) {
     warn qq{Cannot get "$ar_local"};
@@ -276,8 +272,7 @@ sub fetch_prereqs {
     push @prereqs, $mod unless ($mod eq 'perl' or is_core($mod));
   }
   my $search = $self->{search};
-  my $no_remote_lookup = $self->{no_remote_lookup};
-  unless ($no_remote_lookup) {
+  {
     if (scalar @prereqs > 0) {
       my $matches = $search->search(\@prereqs, mode => 'mod');
       if ($matches and (ref($matches) eq 'HASH')) {

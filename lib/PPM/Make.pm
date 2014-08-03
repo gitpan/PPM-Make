@@ -11,16 +11,13 @@ use File::Basename;
 use File::Path;
 use File::Find;
 use File::Copy;
-use Config;
+use File::Spec;
 use Net::FTP;
-use LWP::Simple qw(getstore is_success);
-require File::Spec;
 use Pod::Html;
-use Safe;
-use File::HomeDir;
+use XML::Writer;
 use version;
 
-our $VERSION = '0.9901';
+our $VERSION = '0.9902';
 
 my $protocol = $PPM::Make::Util::protocol;
 my $ext = $PPM::Make::Util::ext;
@@ -47,7 +44,9 @@ sub new {
   my $opts = %cfg ? merge_opts(\%cfg, \%opts) : \%opts;
 
   $no_case = 1 if defined $opts->{no_case};
-  my $search = PPM::Make::Search->new();
+  my $search = PPM::Make::Search->new(
+    no_remote_lookup => $opts->{no_remote_lookup},
+  );
   my $self = {
               opts => $opts || {},
               cwd => '',
@@ -65,7 +64,6 @@ sub new {
               cpan_meta => $opts->{cpan_meta},
               search => $search,
               fetch_error => '',
-              no_remote_lookup => $opts->{no_remote_lookup},
              };
   bless $self, $class;
 }
@@ -89,7 +87,7 @@ sub make_ppm {
       print "Found a local distribution: $local_dist\n";
       my $basename = basename($local_dist);
       copy($local_dist, File::Spec->catfile($build_dir, $basename));
-      $self->{opts}->{no_remote_lookup} = 0;
+      $self->{search}->{no_remote_lookup} = 0;
     }
 
     die $self->{fetch_error} 
@@ -120,7 +118,6 @@ sub make_ppm {
 
   my $meta = PPM::Make::Meta->new(dir => $self->{cwd},
                                   search => $self->{search},
-                                  no_remote_lookup => $self->{no_remote_lookup},
                                   );
   die qq{Creating PPM::Make::Meta object failed}
     unless ($meta and (ref($meta) eq 'PPM::Make::Meta'));
@@ -567,8 +564,7 @@ sub make_ppd {
   }
 
   my $search = $self->{search};
-  my $no_remote_lookup = $self->{no_remote_lookup};
-  unless ($no_remote_lookup) {
+  {
     if ($search->search($name, mode => 'dist')) {
       my $mods = $search->{dist_results}->{$name}->{mods};
       if ($mods and (ref($mods) eq 'ARRAY')) {
@@ -584,8 +580,7 @@ sub make_ppd {
       }
     }
     else {
-      $search->search_error();
-      warn qq{Cannot obtain the modules that '$name' provides};
+      $search->search_error(qq{Cannot obtain the modules that '$name' provides});
     }
   }
   my $mod_ref;
@@ -596,7 +591,7 @@ sub make_ppd {
     push @$mod_ref, $dp;
   }
   my %deps = map {$_ => 1} @$mod_ref;
-  unless ($no_remote_lookup) {
+  {
     if ($mod_ref and ref($mod_ref) eq 'ARRAY') {
       if ($search->search($mod_ref, mode => 'mod')) {
         my $matches = $search->{mod_results};
@@ -614,8 +609,7 @@ sub make_ppd {
           }
         }
         else {
-          $search->search_error();
-          warn qq{Cannot find information on prerequisites for '$name'};
+          $search->search_error(qq{Cannot find information on prerequisites for '$name'});
         }
       }
     }
@@ -630,62 +624,55 @@ sub make_ppd {
 sub print_ppd {
   my ($self, $d, $fn) = @_;
   open (my $fh, '>', $fn) or die "Couldn't write to $fn: $!";
-  my $title = xml_encode($d->{TITLE});
-  my $abstract = xml_encode($d->{ABSTRACT});
-  my $author = xml_encode($d->{AUTHOR});
-  print $fh <<"END";
-<?xml version="1.0" encoding="UTF-8"?>
-<SOFTPKG NAME=\"$d->{SOFTPKG}->{NAME}\" VERSION=\"$d->{SOFTPKG}->{VERSION}\">
-  <TITLE>$title</TITLE>
-  <ABSTRACT>$abstract</ABSTRACT>
-  <AUTHOR>$author</AUTHOR>
-  <IMPLEMENTATION>
-END
+  my $writer = XML::Writer->new(OUTPUT => $fh, DATA_INDENT => 2);
+  $writer->xmlDecl('UTF-8');
+  # weird hack to eliminate an empty line after the XML declaration
+  $writer->startTag('SOFTPKG', NAME => $d->{SOFTPKG}->{NAME}, VERSION => $d->{SOFTPKG}->{VERSION});
+  $writer->setDataMode(1);
+  $writer->dataElement(TITLE => $d->{TITLE});
+  $writer->dataElement(ABSTRACT => $d->{ABSTRACT});
+  $writer->dataElement(AUTHOR => $d->{AUTHOR});
+  $writer->startTag('IMPLEMENTATION');
 
-  foreach (keys %{$d->{DEPENDENCY}}) {
-    print $fh 
-      qq{    <DEPENDENCY NAME="$_" VERSION="$d->{DEPENDENCY}->{$_}" />\n};
+  foreach (sort keys %{$d->{DEPENDENCY}}) {
+    $writer->emptyTag('DEPENDENCY' => NAME => $_, VERSION => $d->{DEPENDENCY}->{$_});
   }
   if ($] > 5.008) {
-    foreach (keys %{$d->{REQUIRE}}) {
-      print $fh 
-        qq{    <REQUIRE NAME="$_" VERSION="$d->{REQUIRE}->{$_}" />\n};
+    foreach (sort keys %{$d->{REQUIRE}}) {
+      $writer->emptyTag('REQUIRE' => NAME => $_, VERSION => $d->{REQUIRE}->{$_});
     }
   }
   foreach (qw(OS ARCHITECTURE)) {
     next unless $d->{$_}->{NAME};
-    print $fh qq{    <$_ NAME="$d->{$_}->{NAME}" />\n};
+    $writer->emptyTag($_ => NAME => $d->{$_}->{NAME});
   }
 
   if (my $script = $d->{INSTALL}->{SCRIPT}) {
-    my $install = 'INSTALL';
-    if (my $exec = $d->{INSTALL}->{EXEC}) {
-      $install .= qq{ EXEC="$exec"};
+    my %attr;
+    for (qw/EXEC HREF/) {
+      next unless $d->{INSTALL}->{$_};
+      $attr{$_} = $d->{INSTALL}->{$_};
     }
-    if (my $href = $d->{INSTALL}->{HREF}) {
-      $install .= qq{ HREF="$href"};
-    }
-    print $fh qq{    <$install>$script</INSTALL>\n};
+    $writer->dataElement('INSTALL', $script, %attr);
   }
 
-  print $fh qq{    <CODEBASE HREF="$d->{CODEBASE}->{HREF}" />\n};
+  $writer->emptyTag('CODEBASE' => HREF => $d->{CODEBASE}->{HREF});
 
   my $provide = $d->{PROVIDE};
   unless ($self->{opts}->{no_ppm4}) {
     if ($provide and (ref($provide) eq 'ARRAY')) {
       foreach my $mod(@$provide) {
-        my $string = qq{    <PROVIDE NAME="$mod->{NAME}"};
+        my %attr;
         if ($mod->{VERSION}) {
-          $string .= qq{ VERSION="$mod->{VERSION}"};
+          $attr{VERSION} = $mod->{VERSION};
         }
-        $string .= qq{ />\n};
-        print $fh $string;
+        $writer->emptyTag('PROVIDE' => NAME => $mod->{NAME}, %attr);
       }
     }
   }
-  
-  print $fh qq{  </IMPLEMENTATION>\n};
-  print $fh qq{</SOFTPKG>\n};
+  $writer->endTag('IMPLEMENTATION');
+  $writer->endTag('SOFTPKG');
+  $writer->end;
   $fh->close;
   $self->{codebase} = $d->{CODEBASE}->{HREF};
 }
@@ -881,7 +868,7 @@ sub fetch_file {
   if ($dist =~ m!$protocol!) {
     ($to = $dist) =~ s!.*/(.*)!$1!;
     print "Fetching $dist ....\n";
-    my $rc = is_success(getstore($dist, $to));
+    my $rc = mirror($dist, $to);
     unless ($rc) {
       $self->{fetch_error} = qq{Fetch of $dist failed.};
       return;
@@ -889,9 +876,8 @@ sub fetch_file {
     return $to;
   }
   my $search = $self->{search};
-  my $no_remote_lookup = $self->{no_remote_lookup};
   my $results;
-  unless ($no_remote_lookup or $dist =~ /$ext$/) {
+  unless ($dist =~ /$ext$/) {
     my $mod = $dist;
     $mod =~ s!-!::!g;
     if ($search->search($mod, mode => 'mod')) {
@@ -932,7 +918,7 @@ sub fetch_file {
         $url =~ s!/$!!;
         $from = $url . '/authors/id/' . $id . '/' . $file;
         print "Fetching $from ...\n";
-        last if is_success(getstore($from, $file));
+        last if mirror($from, $file);
       }
       unless (-e $file) {
         $self->{fetch_error} = "Fetch of $file from $from failed";
@@ -1456,12 +1442,6 @@ L<make_ppm> for a command-line interface for making
 ppm packages, L<ppm_install> for a command line interface
 for installing CPAN packages via C<ppm>,
 L<PPM::Make::Install>, and L<PPM>.
-
-The software needed to run the remote SOAP server used here
-for fetching author, module, and distribution information
-is available in the I<Cpan-Search-Lite> project
-at L<http://sourceforge.net/projects/cpan-search/> as
-F<cgi-bin/ppminfo.cgi> - see also L<CPAN::Search::Lite>.
 
 =cut
 

@@ -1,15 +1,14 @@
 package PPM::Make::Config;
 use strict;
 use warnings;
-use Exporter;
+use base qw(Exporter);
 use File::HomeDir;
 require File::Spec;
 use Config;
 use Config::IniFiles;
-use LWP::Simple qw(getstore is_success);
 
 our ($ERROR);
-our $VERSION = '0.9901';
+our $VERSION = '0.9902';
 
 =head1 NAME
 
@@ -125,8 +124,6 @@ Constant which is true if the C<Module::Build> module is available.
 use constant HAS_MB => has_mb();
 
 require Win32 if WIN32;
-
-use base qw(Exporter);
 
 our (@EXPORT_OK, %EXPORT_TAGS);
 my @exports = qw(check_opts arch_and_os get_cfg_file read_cfg merge_opts
@@ -378,9 +375,6 @@ sub what_have_you {
   my $make = WIN32 ? 'nmake' : 'make';
   $has{make} = $progs->{make} ||
     $Config{make} || which($make) || $CPAN::Config->{make};
-  if (WIN32 and not $has{make}) {
-    $has{make} = fetch_nmake();
-  }
 
   $has{perl} = 
     $^X || which('perl');
@@ -394,64 +388,6 @@ sub what_have_you {
   }
 
   return \%has;
-}
-
-=item fetch_nmake
-
-Fetch C<nmake.exe>.
-
-  unless (my $installed_nmake = fetch_nmake) {
-      print "I could not retrieve nmake";
-  }
-
-=cut
-
-sub fetch_nmake {
-  my ($exe, $err) = ('nmake.exe', 'nmake.err');
-  if (my $p = which($exe)) {
-    warn qq{You already have $exe as "$p". Fetch aborted.};
-    return $p;
-  }
-  my $nmake = 'nmake15.exe';
-  my $r = 'http://download.microsoft.com/download/vc15/Patch/1.52/W95/EN-US/Nmake15.exe';
-  unless (is_success(getstore($r, $nmake))) {
-    $ERROR = "Could not fetch $nmake";
-    return;
-  }
-  unless (-e $nmake) {
-    $ERROR = "Getting $nmake failed";
-    return;
-  }
-  my @args = ($nmake);
-  system(@args);
-  unless (-e $exe and -e $err) {
-    $ERROR = "Extraction of $exe and $err failed";
-    return;
-  }
-  use File::Copy;
-  my $dir = prompt('Which directory on your PATH should I copy the files to?',
-                   $Config{bin});
-  unless (-d $dir) {
-    my $ans = prompt(qq{$dir doesn\'t exist. Create it?}, 'yes');
-    if ($ans =~ /^y/i) {
-      mkdir $dir or do {
-        $ERROR = "Could not create $dir: $!";
-        return;
-      };
-    }
-    else {
-      $ERROR = "Will not create $dir";
-      return;
-    }
-  }
-  for ($exe, $err, 'README.TXT') {
-    move($_, $dir) or do {
-      $ERROR = "Moving $_ to $dir failed: $!";
-      return;
-    };
-  }
-  unlink $nmake or warn "Unlink of $nmake failed: $!";
-  return which($exe);
 }
 
 sub mod_version {
